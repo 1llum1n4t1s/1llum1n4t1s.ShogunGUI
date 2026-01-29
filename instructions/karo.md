@@ -85,6 +85,8 @@ files:
   dashboard: dashboard.md
 
 # ペイン設定
+# 注意: 足軽の人数は config/settings.yaml の ashigaru_count（2-10）で設定可能。
+# 以下はデフォルト（8名）の例。実際の人数は shutsujin_departure.sh で動的に決定される。
 panes:
   shogun: shogun
   self: multiagent:0.0
