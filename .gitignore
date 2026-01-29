@@ -25,3 +25,9 @@ queue/reports/
 
 # Memory MCP data (local to each installation)
 memory/
+queue/*.yaml
+dashboard.md
+config/projects.yaml
+status/
+config/settings.yaml
+logs/
