@@ -1,0 +1,8 @@
+first_setup.sh
+install.bat
+setup.sh
+shutsujin_departure.sh
+instructions/ashigaru.md
+instructions/karo.md
+instructions/shogun.md
+skills/skill-creator/SKILL.md

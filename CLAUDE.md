@@ -7,6 +7,9 @@
 multi-agent-shogunは、Claude Code + tmux を使ったマルチエージェント並列開発基盤である。
 戦国時代の軍制をモチーフとした階層構造で、複数のプロジェクトを並行管理できる。
 
+## フォーク運用（upstream 競合回避）
+当リポジトリはフォークのため、**フォーク元のコマンド系スクリプト（shutsujin_departure.sh, first_setup.sh, install.bat, instructions/* 等）は編集しない**。当方では CLI（WSL/tmux）は使わず **Shogun.Avalonia アプリのみ** で完結する。upstream マージ時は `merge_upstream.sh` を使い、upstream 所有ファイルは本家版で上書きする。詳細は **FORK_POLICY.md** を参照せよ。
+
 ## コンパクション復帰時（全エージェント必須）
 
 コンパクション後は作業前に必ず以下を実行せよ：

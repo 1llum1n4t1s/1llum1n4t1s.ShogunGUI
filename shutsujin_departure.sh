@@ -13,27 +13,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 設定ファイル読み込み関数
-read_yaml_value() {
-    local key="$1"
-    local default="$2"
-    if [ -f "./config/settings.yaml" ]; then
-        local value=$(grep "^${key}:" ./config/settings.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "$default")
-        echo "$value"
-    else
-        echo "$default"
-    fi
-}
-
 # 言語設定を読み取り（デフォルト: ja）
-LANG_SETTING=$(read_yaml_value "language" "ja")
-
-# 足軽の人数を読み取り（デフォルト: 8、範囲: 2-10）
-ASHIGARU_COUNT=$(read_yaml_value "ashigaru_count" "8")
-# 範囲チェック（2-10）
-if [ "$ASHIGARU_COUNT" -lt 2 ] || [ "$ASHIGARU_COUNT" -gt 10 ]; then
-    log_war "足軽の人数が範囲外（${ASHIGARU_COUNT}）。デフォルト値 8 を使用します。"
-    ASHIGARU_COUNT=8
+LANG_SETTING="ja"
+if [ -f "./config/settings.yaml" ]; then
+    LANG_SETTING=$(grep "^language:" ./config/settings.yaml 2>/dev/null | awk '{print $2}' || echo "ja")
 fi
 
 # 色付きログ関数（戦国風）
@@ -198,7 +181,7 @@ log_info "📜 前回の軍議記録を破棄中..."
 [ -d ./queue/tasks ] || mkdir -p ./queue/tasks
 
 # 足軽タスクファイルリセット
-for i in $(seq 1 $ASHIGARU_COUNT); do
+for i in {1..8}; do
     cat > ./queue/tasks/ashigaru${i}.yaml << EOF
 # 足軽${i}専用タスクファイル
 task:
@@ -212,7 +195,7 @@ EOF
 done
 
 # 足軽レポートファイルリセット
-for i in $(seq 1 $ASHIGARU_COUNT); do
+for i in {1..8}; do
     cat > ./queue/reports/ashigaru${i}_report.yaml << EOF
 worker_id: ashigaru${i}
 task_id: null
@@ -222,49 +205,54 @@ result: null
 EOF
 done
 
-# status/master_status.yaml を動的に生成
-cat > ./status/master_status.yaml << EOF
-last_updated: null
-current_task: null
-task_status: idle
-task_description: null
-agents:
-  shogun:
-    status: idle
-    last_action: null
-  karo:
-    status: idle
-    current_subtasks: 0
-    last_action: null
-EOF
-for i in $(seq 1 $ASHIGARU_COUNT); do
-    cat >> ./status/master_status.yaml << EOF
-  ashigaru${i}:
-    status: idle
-    current_task: null
-    progress: 0
-    last_completed: null
-EOF
-done
-
 # キューファイルリセット
 cat > ./queue/shogun_to_karo.yaml << 'EOF'
 queue: []
 EOF
 
-# karo_to_ashigaru.yaml を動的に生成
-cat > ./queue/karo_to_ashigaru.yaml << EOF
+cat > ./queue/karo_to_ashigaru.yaml << 'EOF'
 assignments:
-EOF
-for i in $(seq 1 $ASHIGARU_COUNT); do
-    cat >> ./queue/karo_to_ashigaru.yaml << EOF
-  ashigaru${i}:
+  ashigaru1:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru2:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru3:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru4:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru5:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru6:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru7:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru8:
     task_id: null
     description: null
     target_path: null
     status: idle
 EOF
-done
 
 log_success "✅ 陣払い完了"
 
@@ -336,7 +324,7 @@ log_success "  └─ ダッシュボード初期化完了 (言語: $LANG_SETTIN
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 4: multiagentセッション作成（karo + ashigaru1-N）
+# STEP 4: multiagentセッション作成（9ペイン：karo + ashigaru1-8）
 # ═══════════════════════════════════════════════════════════════════════════════
 # tmux の存在確認
 if ! command -v tmux &> /dev/null; then
@@ -353,8 +341,7 @@ if ! command -v tmux &> /dev/null; then
     exit 1
 fi
 
-TOTAL_PANES=$((1 + ASHIGARU_COUNT))
-log_war "⚔️ 家老・足軽の陣を構築中（${TOTAL_PANES}名配備：家老1 + 足軽${ASHIGARU_COUNT}）..."
+log_war "⚔️ 家老・足軽の陣を構築中（9名配備）..."
 
 # 最初のペイン作成
 if ! tmux new-session -d -s multiagent -n "agents" 2>/dev/null; then
@@ -373,21 +360,29 @@ if ! tmux new-session -d -s multiagent -n "agents" 2>/dev/null; then
     exit 1
 fi
 
-# 必要なペイン数を動的に作成（縦に分割）
-for i in $(seq 1 $ASHIGARU_COUNT); do
-    tmux split-window -v -t "multiagent:0"
-done
+# 3x3グリッド作成（合計9ペイン）
+# 最初に3列に分割
+tmux split-window -h -t "multiagent:0"
+tmux split-window -h -t "multiagent:0"
 
-# ペインタイトル設定（動的生成）
-PANE_TITLES=("karo")
-PANE_COLORS=("1;31")  # karo: 赤
-for i in $(seq 1 $ASHIGARU_COUNT); do
-    PANE_TITLES+=("ashigaru${i}")
-    PANE_COLORS+=("1;34")  # ashigaru: 青
-done
+# 各列を3行に分割
+tmux select-pane -t "multiagent:0.0"
+tmux split-window -v
+tmux split-window -v
 
-# 各ペインにタイトルとプロンプトを設定
-for i in $(seq 0 $ASHIGARU_COUNT); do
+tmux select-pane -t "multiagent:0.3"
+tmux split-window -v
+tmux split-window -v
+
+tmux select-pane -t "multiagent:0.6"
+tmux split-window -v
+tmux split-window -v
+
+# ペインタイトル設定（0: karo, 1-8: ashigaru1-8）
+PANE_TITLES=("karo" "ashigaru1" "ashigaru2" "ashigaru3" "ashigaru4" "ashigaru5" "ashigaru6" "ashigaru7" "ashigaru8")
+PANE_COLORS=("1;31" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34")  # karo: 赤, ashigaru: 青
+
+for i in {0..8}; do
     tmux select-pane -t "multiagent:0.$i" -T "${PANE_TITLES[$i]}"
     tmux send-keys -t "multiagent:0.$i" "cd \"$(pwd)\" && export PS1='(\[\033[${PANE_COLORS[$i]}m\]${PANE_TITLES[$i]}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
 done
@@ -442,8 +437,8 @@ if [ "$SETUP_ONLY" = false ]; then
     # 少し待機（安定のため）
     sleep 1
 
-    # 家老 + 足軽（動的ペイン数）
-    for i in $(seq 0 $ASHIGARU_COUNT); do
+    # 家老 + 足軽（9ペイン）
+    for i in {0..8}; do
         tmux send-keys -t "multiagent:0.$i" "claude --dangerously-skip-permissions"
         tmux send-keys -t "multiagent:0.$i" Enter
     done
@@ -550,7 +545,7 @@ NINJA_EOF
     # 足軽に指示書を読み込ませる（1-8）
     sleep 2
     log_info "  └─ 足軽に指示書を伝達中..."
-    for i in $(seq 1 $ASHIGARU_COUNT); do
+    for i in {1..8}; do
         tmux send-keys -t "multiagent:0.$i" "instructions/ashigaru.md を読んで役割を理解せよ。汝は足軽${i}号である。"
         sleep 0.3
         tmux send-keys -t "multiagent:0.$i" Enter
@@ -607,8 +602,8 @@ if [ "$SETUP_ONLY" = true ]; then
     echo "  │  # 将軍を召喚                                            │"
     echo "  │  tmux send-keys -t shogun 'claude --dangerously-skip-permissions' Enter │"
     echo "  │                                                          │"
-    echo "  │  # 家老・足軽を一斉召喚（動的ペイン数）                   │"
-    echo "  │  for i in \$(seq 0 $ASHIGARU_COUNT); do \\                │"
+    echo "  │  # 家老・足軽を一斉召喚                                   │"
+    echo "  │  for i in {0..8}; do \\                                   │"
     echo "  │    tmux send-keys -t multiagent:0.\$i \\                   │"
     echo "  │      'claude --dangerously-skip-permissions' Enter       │"
     echo "  │  done                                                    │"

@@ -44,26 +44,6 @@ log_step() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 設定ファイル読み込み関数
-read_yaml_value() {
-    local key="$1"
-    local default="$2"
-    if [ -f "./config/settings.yaml" ]; then
-        local value=$(grep "^${key}:" ./config/settings.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "$default")
-        echo "$value"
-    else
-        echo "$default"
-    fi
-}
-
-# 足軽の人数を読み取り（デフォルト: 8、範囲: 2-10）
-ASHIGARU_COUNT=$(read_yaml_value "ashigaru_count" "8")
-# 範囲チェック（2-10）
-if [ "$ASHIGARU_COUNT" -lt 2 ] || [ "$ASHIGARU_COUNT" -gt 10 ]; then
-    log_warn "足軽の人数が範囲外（${ASHIGARU_COUNT}）。デフォルト値 8 を使用します。"
-    ASHIGARU_COUNT=8
-fi
-
 # 結果追跡用変数
 RESULTS=()
 HAS_ERROR=false
@@ -414,7 +394,7 @@ RESULTS+=("設定ファイル: OK")
 log_step "STEP 7: キューファイル初期化"
 
 # 足軽用タスクファイル作成
-for i in $(seq 1 $ASHIGARU_COUNT); do
+for i in {1..8}; do
     TASK_FILE="$SCRIPT_DIR/queue/tasks/ashigaru${i}.yaml"
     if [ ! -f "$TASK_FILE" ]; then
         cat > "$TASK_FILE" << EOF
@@ -429,10 +409,10 @@ task:
 EOF
     fi
 done
-log_info "足軽タスクファイル (1-${ASHIGARU_COUNT}) を確認/作成しました"
+log_info "足軽タスクファイル (1-8) を確認/作成しました"
 
 # 足軽用レポートファイル作成
-for i in $(seq 1 $ASHIGARU_COUNT); do
+for i in {1..8}; do
     REPORT_FILE="$SCRIPT_DIR/queue/reports/ashigaru${i}_report.yaml"
     if [ ! -f "$REPORT_FILE" ]; then
         cat > "$REPORT_FILE" << EOF
@@ -444,7 +424,7 @@ result: null
 EOF
     fi
 done
-log_info "足軽レポートファイル (1-${ASHIGARU_COUNT}) を確認/作成しました"
+log_info "足軽レポートファイル (1-8) を確認/作成しました"
 
 RESULTS+=("キューファイル: OK")
 
@@ -527,7 +507,10 @@ fi
 
 if [ "$ALIAS_ADDED" = true ]; then
     log_success "alias設定を追加しました"
-    log_info "反映するには 'source ~/.bashrc' を実行するか、ターミナルを再起動してください"
+    log_warn "alias を反映するには、以下のいずれかを実行してください："
+    log_info "  1. source ~/.bashrc"
+    log_info "  2. PowerShell で 'wsl --shutdown' してからターミナルを開き直す"
+    log_info "  ※ ウィンドウを閉じるだけでは WSL が終了しないため反映されません"
 fi
 
 RESULTS+=("alias設定: OK")

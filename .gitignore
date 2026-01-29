@@ -31,3 +31,16 @@ config/projects.yaml
 status/
 config/settings.yaml
 logs/
+
+# IDE / Editor
+.cursor/
+.idea/
+.vs/
+.vscode/
+*.csproj.user
+*.suo
+
+# Build outputs
+bin/
+obj/
+build_output.txt

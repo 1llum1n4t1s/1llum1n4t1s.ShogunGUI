@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<linker>
+  <assembly fullname="Shogun.Avalonia" />
+  <assembly fullname="Avalonia.Base" />
+  <assembly fullname="Avalonia.Controls" />
+  <assembly fullname="Avalonia.Markup.Xaml" />
+  <assembly fullname="Avalonia.Styling" />
+</linker>

@@ -1,0 +1,91 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Shogun.Avalonia.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="560"
+        x:Class="Shogun.Avalonia.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="設定 - Shogun.Avalonia"
+        Width="520" Height="560"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+    <Grid RowDefinitions="Auto,*" Margin="16">
+        <TextBlock Grid.Row="0" Text="設定" FontSize="20" FontWeight="Bold" Margin="0,0,0,16"/>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="12" Margin="0,0,4,0">
+                <!-- 言語・足軽人数は本家スクリプトが config/settings.yaml を読むため当アプリでは変更不可（FORK_POLICY） -->
+                <!-- config/settings.yaml: skill.save_path -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="スキル保存先 (skill.save_path)"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding SkillSavePath}" IsReadOnly="True" Watermark="参照でフォルダを選択"/>
+                        <Button Grid.Column="1" Content="参照" Margin="8,0,0,0" Click="OnBrowseSkillSavePath"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- config/settings.yaml: skill.local_path -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="ローカルスキル保存先 (skill.local_path)"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding SkillLocalPath}" IsReadOnly="True" Watermark="参照でフォルダを選択"/>
+                        <Button Grid.Column="1" Content="参照" Margin="8,0,0,0" Click="OnBrowseSkillLocalPath"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- config/settings.yaml: screenshot.path -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="スクリーンショット保存先 (screenshot.path)"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding ScreenshotPath}" IsReadOnly="True" Watermark="参照でフォルダを選択"/>
+                        <Button Grid.Column="1" Content="参照" Margin="8,0,0,0" Click="OnBrowseScreenshotPath"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- config/settings.yaml: logging.level -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="ログレベル (logging.level)"/>
+                    <ComboBox ItemsSource="{Binding LogLevelOptions}" SelectedItem="{Binding LogLevel}" MinWidth="140" HorizontalAlignment="Left"/>
+                </StackPanel>
+
+                <!-- config/settings.yaml: logging.path -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="ログ保存先 (logging.path)"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding LogPath}" IsReadOnly="True" Watermark="参照でフォルダを選択"/>
+                        <Button Grid.Column="1" Content="参照" Margin="8,0,0,0" Click="OnBrowseLogPath"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- AI/API（config にはなし。Claude API 用） -->
+                <TextBlock Text="AI / API（Claude・アプリ固有）" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="API キー（Anthropic）"/>
+                    <TextBox Text="{Binding ApiKey}"
+                             PasswordChar="●"
+                             RevealPassword="True"
+                             Watermark="Anthropic Claude API キー"/>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="モデル名"/>
+                    <ComboBox ItemsSource="{Binding ModelNameOptions}" SelectedItem="{Binding ModelName}" IsEditable="True" MinWidth="260" HorizontalAlignment="Left"/>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="API エンドポイント（任意・Claude では未使用）"/>
+                    <TextBox Text="{Binding ApiEndpoint}" Watermark="https://... （将来用・未使用）"/>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="ワークスペースルート（queue/dashboard/instructions の親フォルダ）"/>
+                    <TextBox Text="{Binding RepoRoot}" Watermark="C:\...\multi-agent-shogun（空で config の親を使用）"/>
+                </StackPanel>
+                <Border Height="24"/>
+                <!-- ボタン -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button Content="キャンセル" Command="{Binding CancelCommand}"/>
+                    <Button Content="保存して閉じる" Command="{Binding SaveAndCloseCommand}"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

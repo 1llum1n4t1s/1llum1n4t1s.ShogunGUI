@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Shogun.Avalonia.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+        x:Class="Shogun.Avalonia.ProjectSettingsWindow"
+        x:DataType="vm:ProjectSettingsViewModel"
+        Title="プロジェクト設定 - Shogun.Avalonia"
+        Width="800" Height="600"
+        WindowStartupLocation="CenterScreen">
+    <Grid RowDefinitions="Auto,*" Margin="16">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <TextBlock Grid.Column="0" Text="プロジェクト設定" FontSize="20" FontWeight="Bold"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="追加" Command="{Binding AddProjectCommand}"/>
+                <Button Content="削除" Command="{Binding DeleteProjectCommand}" IsEnabled="{Binding IsProjectSelected}"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="250,*">
+            <!-- 左: プロジェクト一覧 -->
+            <Border Grid.Column="0" 
+                    BorderThickness="1" 
+                    CornerRadius="4"
+                    Margin="0,0,8,0">
+                <ListBox ItemsSource="{Binding Projects}"
+                         SelectedItem="{Binding SelectedProject}"
+                         SelectionMode="Single">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="8">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding Id}" FontSize="11"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- 右: プロジェクト詳細 -->
+            <ScrollViewer Grid.Column="1">
+                <Border IsEnabled="{Binding IsProjectSelected}">
+                    <StackPanel Spacing="12" Margin="0,0,4,0">
+                        <!-- ID -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="ID"/>
+                            <TextBox Text="{Binding SelectedProject.Id}" IsReadOnly="True"/>
+                        </StackPanel>
+
+                        <!-- 名前 -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="名前"/>
+                            <TextBox Text="{Binding SelectedProject.Name}"/>
+                        </StackPanel>
+
+                        <!-- パス -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="パス"/>
+                            <TextBox Text="{Binding SelectedProject.Path}" Watermark="/mnt/c/Projects/..."/>
+                        </StackPanel>
+
+                        <!-- 優先度 -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="優先度"/>
+                            <ComboBox ItemsSource="{Binding PriorityOptions}"
+                                      SelectedItem="{Binding SelectedProject.Priority}"
+                                      MinWidth="120"
+                                      HorizontalAlignment="Left"/>
+                        </StackPanel>
+
+                        <!-- ステータス -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="ステータス"/>
+                            <ComboBox ItemsSource="{Binding StatusOptions}"
+                                      SelectedItem="{Binding SelectedProject.Status}"
+                                      MinWidth="120"
+                                      HorizontalAlignment="Left"/>
+                        </StackPanel>
+
+                        <!-- Notion URL -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Notion URL（任意）"/>
+                            <TextBox Text="{Binding SelectedProject.NotionUrl}" Watermark="https://www.notion.so/..."/>
+                        </StackPanel>
+
+                        <!-- 説明 -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="説明（任意）"/>
+                            <TextBox Text="{Binding SelectedProject.Description}"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MinHeight="100"
+                                     Watermark="プロジェクトの説明を入力..."/>
+                        </StackPanel>
+
+                        <Border Height="24"/>
+                        <!-- ボタン -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                            <Button Content="キャンセル" Command="{Binding CancelCommand}"/>
+                            <Button Content="保存して閉じる" Command="{Binding SaveAndCloseCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>
