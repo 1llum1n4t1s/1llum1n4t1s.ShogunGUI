@@ -24,8 +24,8 @@ if %ERRORLEVEL% NEQ 0 (
     net session >nul 2>&1
     if %ERRORLEVEL% NEQ 0 (
         echo   +============================================================+
-        echo   |  [WARN] Administrator privileges required!                 |
-        echo   |         管理者権限が必要です                               |
+        echo   ^|  [WARN] Administrator privileges required!                 ^|
+        echo   ^|         管理者権限が必要です                               ^|
         echo   +============================================================+
         echo.
         echo   Right-click install.bat and select "Run as administrator"
@@ -40,8 +40,8 @@ if %ERRORLEVEL% NEQ 0 (
 
     echo.
     echo   +============================================================+
-    echo   |  [!] Restart required!                                     |
-    echo   |      再起動が必要です                                      |
+    echo   ^|  [!] Restart required!                                     ^|
+    echo   ^|      再起動が必要です                                      ^|
     echo   +============================================================+
     echo.
     echo   After restart, run install.bat again.
@@ -152,7 +152,7 @@ wsl.exe -d Ubuntu -- bash -c "cd \"%WSL_PATH%\" && chmod +x *.sh && ./first_setu
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo   +============================================================+
-    echo   |  [NG] Setup failed!                                        |
+    echo   ^|  [NG] Setup failed!                                        ^|
     echo   +============================================================+
     echo.
     pause
