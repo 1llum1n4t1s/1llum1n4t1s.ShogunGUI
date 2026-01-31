@@ -28,6 +28,26 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
 ```
 
 注意: 複数の独立したタスクなら複数足軽に分散して並列実行させよ。JSONのみ出力し、余計な説明は不要。";
+    
+    private const string KaroExecutionPrompt = @"足軽からの報告書をすべて読んだ。確認せよ: queue/reports/ashigaru*_report.yaml
+
+報告内容をまとめ、必要に応じて自分でコードを改修せよ。
+1. 報告ファイルをすべて読む
+2. 改修が必要なファイルを特定する
+3. 必要に応じてファイルを Edit ツールで改修する
+4. ビルドが成功することを確認する
+5. 最終的なサマリーを出力する
+
+改修内容を含めた最終報告を、以下のYAML形式で出力せよ:
+
+---
+modifications:
+  - file: ""ファイルパス""
+    description: ""改修内容""
+result: ""成功/失敗""
+summary: ""処理サマリー""
+---";
+    
     private const string KaroReportUserPrompt = "queue/reports/ の報告を確認し、dashboard.md の「戦果」を更新せよ。";
 
     private readonly IClaudeCodeProcessHost _processHost;
@@ -54,6 +74,14 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
             // 家老の出力（JSON）を解析して足軽タスクファイルを生成
             await GenerateAshigaruTasksFromKaroOutputAsync(result.Output, cancellationToken).ConfigureAwait(false);
         }
+        return result.Success;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RunKaroExecutionAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var karoInstructions = _instructionsLoader.LoadKaroInstructions() ?? string.Empty;
+        var result = await RunClaudeAsync(KaroExecutionPrompt, karoInstructions, progress, "家老（実行フェーズ）", cancellationToken).ConfigureAwait(false);
         return result.Success;
     }
 

@@ -28,6 +28,12 @@ public interface IClaudeCodeRunService
     /// <returns>成功したら true。</returns>
     Task<bool> RunKaroReportAggregationAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default);
 
+    /// <summary>家老として足軽の報告をもとにコード改修を実行する。queue/reports/ の報告を読み、必要に応じてファイルを Edit ツールで改修する。</summary>
+    /// <param name="progress">進捗メッセージ（任意）。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <returns>成功したら true。</returns>
+    Task<bool> RunKaroExecutionAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default);
+
     /// <summary>将軍として Claude Code CLI を起動し、殿の指示を家老への具体的な指示文に解決する。</summary>
     /// <param name="userInput">殿（ユーザー）の入力。</param>
     /// <param name="projectId">プロジェクトID。</param>
