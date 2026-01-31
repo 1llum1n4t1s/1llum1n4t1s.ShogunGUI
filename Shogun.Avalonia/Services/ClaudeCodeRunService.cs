@@ -139,10 +139,22 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
         try
         {
             var repoRoot = _queueService.GetRepoRoot();
-            var json = System.Text.Json.JsonDocument.Parse(karoJson);
+            
+            // markdown コードブロック（```json ... ```）を除去
+            var jsonText = karoJson;
+            if (jsonText.StartsWith("```json", StringComparison.Ordinal))
+                jsonText = jsonText.Substring(7);
+            if (jsonText.StartsWith("```", StringComparison.Ordinal))
+                jsonText = jsonText.Substring(3);
+            if (jsonText.EndsWith("```", StringComparison.Ordinal))
+                jsonText = jsonText.Substring(0, jsonText.Length - 3);
+            jsonText = jsonText.Trim();
+            
+            var json = System.Text.Json.JsonDocument.Parse(jsonText);
             var root = json.RootElement;
             if (!root.TryGetProperty("tasks", out var tasksElement) || tasksElement.ValueKind != System.Text.Json.JsonValueKind.Array)
                 return;
+            
             foreach (var taskElem in tasksElement.EnumerateArray())
             {
                 if (!taskElem.TryGetProperty("ashigaru_id", out var idElem))
