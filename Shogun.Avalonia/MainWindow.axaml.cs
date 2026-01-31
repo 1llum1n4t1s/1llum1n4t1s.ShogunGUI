@@ -17,6 +17,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Opened += OnOpened;
+        Closed += OnClosed;
+    }
+
+    /// <summary>ウィンドウ閉鎖時、常駐プロセスを終了する。</summary>
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+            vm.OnAppShutdown();
     }
 
     /// <summary>ウィンドウ表示後、Claude Code 環境の準備を開始する（RealTimeTranslator の OnStartup → InitializeModelsAsync と同様）。</summary>
@@ -69,9 +77,21 @@ public partial class MainWindow : Window
 
     private async void OnChatInputKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && DataContext is MainWindowViewModel vm && !vm.IsAiProcessing)
+        if (e.Key != Key.Enter)
+            return;
+        var hasShift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        if (!hasShift && DataContext is MainWindowViewModel vm && !vm.IsAiProcessing)
         {
+            // Enter キー：送信
             await vm.SendMessageAsync();
+            e.Handled = true;
+        }
+        else if (hasShift && sender is TextBox tb)
+        {
+            // Shift+Enter：改行を挿入
+            var caretIndex = tb.CaretIndex;
+            tb.Text = tb.Text?.Insert(caretIndex, Environment.NewLine) ?? Environment.NewLine;
+            tb.CaretIndex = caretIndex + Environment.NewLine.Length;
             e.Handled = true;
         }
     }

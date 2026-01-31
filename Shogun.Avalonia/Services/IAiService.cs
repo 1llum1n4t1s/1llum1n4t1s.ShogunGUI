@@ -22,7 +22,4 @@ public interface IAiService
     /// <param name="cancellationToken">キャンセルトークン。</param>
     /// <returns>AI応答。</returns>
     Task<string> SendWithSystemAsync(string systemPrompt, string userMessage, string? modelOverride = null, CancellationToken cancellationToken = default);
-
-    /// <summary>サービスが利用可能か（APIキーが設定されているか）。</summary>
-    bool IsAvailable { get; }
 }

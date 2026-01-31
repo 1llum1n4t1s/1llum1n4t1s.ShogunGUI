@@ -25,9 +25,12 @@ public partial class App : Application
             var orchestrator = new AgentOrchestrator(queueService, aiService, instructionsLoader, settingsService);
             var claudeCodeSetupService = new ClaudeCodeSetupService();
             var claudeModelsService = new ClaudeCodeModelsService();
+            var processHost = new ClaudeCodeProcessHost(claudeCodeSetupService, queueService);
+            var claudeCodeRunService = new ClaudeCodeRunService(processHost, claudeCodeSetupService, queueService, instructionsLoader);
+            var agentWorkerService = new AgentWorkerService(claudeCodeRunService, queueService, processHost);
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(projectService, aiService, queueService, orchestrator, settingsService, claudeCodeSetupService, null, claudeModelsService)
+                DataContext = new MainWindowViewModel(projectService, aiService, queueService, orchestrator, settingsService, claudeCodeSetupService, claudeCodeRunService, agentWorkerService, claudeModelsService)
             };
         }
 

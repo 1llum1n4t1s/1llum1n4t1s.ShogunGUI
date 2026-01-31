@@ -4,14 +4,11 @@ using System.Threading.Tasks;
 namespace Shogun.Avalonia.Services;
 
 /// <summary>
-/// AI チャットサービス。当アプリでは API キーを使用しないため、常に利用不可。
+/// AI チャットサービス。当アプリでは API キーを使用しない。
 /// 実際の AI 呼び出しは Claude Code CLI（upstream）側で行う。
 /// </summary>
 public class AiService : IAiService
 {
-    /// <summary>サービスが利用可能か。当アプリでは API を使わないため常に false。</summary>
-    public bool IsAvailable => false;
-
     /// <inheritdoc />
     public Task<string> SendChatMessageAsync(string message, string? projectContext = null, CancellationToken cancellationToken = default)
     {

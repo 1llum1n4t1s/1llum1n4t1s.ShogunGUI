@@ -51,6 +51,33 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
         return !string.IsNullOrEmpty(path) && File.Exists(path);
     }
 
+    /// <summary>インストール済みの Node.js バージョンを取得する。</summary>
+    private string GetInstalledNodeVersion()
+    {
+        var nodeDir = GetAppLocalNodeDir();
+        if (string.IsNullOrEmpty(nodeDir)) return string.Empty;
+        var nodeExe = Path.Combine(nodeDir, "node.exe");
+        if (!File.Exists(nodeExe)) return string.Empty;
+
+        try
+        {
+            using var proc = new Process();
+            proc.StartInfo.FileName = nodeExe;
+            proc.StartInfo.Arguments = "-v";
+            proc.StartInfo.UseShellExecute = false;
+            proc.StartInfo.CreateNoWindow = true;
+            proc.StartInfo.RedirectStandardOutput = true;
+            proc.Start();
+            var output = proc.StandardOutput.ReadToEnd().Trim();
+            proc.WaitForExit();
+            return output; // 例: "v20.20.0"
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     /// <inheritdoc />
     public async Task<bool> InstallNodeAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -59,14 +86,24 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
             progress?.Report("Windows のみ対応しています。");
             return false;
         }
+
+        // バージョンチェック
+        var currentVersion = GetInstalledNodeVersion();
+        if (currentVersion == NodeVersion)
+        {
+            Logger.Log($"Node.js は既に指定バージョン {NodeVersion} です。ダウンロードをスキップします。", LogLevel.Info);
+            progress?.Report($"Node.js {NodeVersion} はインストール済みです。");
+            return true;
+        }
+
         var baseDir = BaseDir;
         var extractDir = Path.Combine(baseDir, "nodejs_extract");
         var nodeDir = Path.Combine(baseDir, "nodejs");
         var zipPath = Path.Combine(baseDir, NodeZipName);
         try
         {
-            Logger.Log("Node.js のインストールを開始します。", LogLevel.Info);
-            progress?.Report("Node.js をダウンロード中…");
+            Logger.Log($"Node.js のインストールを開始します (Target: {NodeVersion}, Current: {currentVersion})", LogLevel.Info);
+            progress?.Report($"Node.js {NodeVersion} をダウンロード中…");
             Directory.CreateDirectory(baseDir);
             using (var client = new HttpClient())
             {
@@ -171,41 +208,38 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
     /// <inheritdoc />
     public async Task<bool> RunLoginAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        var claudePath = GetClaudeExecutablePath();
-        if (string.IsNullOrEmpty(claudePath) || !File.Exists(claudePath))
+        var nodeDir = GetAppLocalNodeDir();
+        var nodeExe = Path.Combine(nodeDir, "node.exe");
+        var claudeJsPath = Path.Combine(GetAppLocalNpmPrefix(), "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+
+        if (!File.Exists(nodeExe) || !File.Exists(claudeJsPath))
         {
-            progress?.Report("Claude Code CLI がインストールされていません。先に「Claude Code をインストール」を実行してください。");
+            progress?.Report("Node.js または Claude Code が見つかりません。先にインストールを実行してください。");
             return false;
         }
+
         try
         {
-            progress?.Report("ログイン用のウィンドウを開いています。認証方法で「Claude Pro/Max アカウント」を選択し、ブラウザで認証・承認してください。");
+            progress?.Report("ログイン用のウィンドウを開いています。認証を完了してください...");
+            
+            // Windows で新しいコンソールウィンドウを開き、PATH を通した状態でログインを実行する
             var startInfo = new ProcessStartInfo
             {
-                FileName = claudePath,
-                Arguments = "login",
-                UseShellExecute = false,
+                FileName = "cmd.exe",
+                // /c の後の全体を二重引用符で囲むことで、内部のパスにスペースが含まれていても正しく解釈させる
+                Arguments = $"/c \"set \"PATH={nodeDir};%PATH%\" && \"{nodeExe}\" \"{claudeJsPath}\" login || pause\"",
+                UseShellExecute = true,
                 CreateNoWindow = false,
-                RedirectStandardInput = true,
                 WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
             };
-            using var proc = new Process { StartInfo = startInfo };
-            proc.Start();
-            await Task.Delay(2500, cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await proc.StandardInput.WriteLineAsync("2").ConfigureAwait(false);
-                proc.StandardInput.Close();
-            }
-            catch
-            {
-                // 既にプロンプトが過ぎている場合などは無視
-            }
-            progress?.Report("ログイン用ウィンドウが開きました。ブラウザで認証を完了してください。");
+
+            Logger.Log($"ログインウィンドウを起動します: {startInfo.FileName} {startInfo.Arguments}", LogLevel.Info);
+            using var proc = Process.Start(startInfo);
             return true;
         }
         catch (Exception ex)
         {
+            Logger.LogException("ログインプロセスの起動に失敗しました。", ex);
             progress?.Report($"エラー: {ex.Message}");
             return false;
         }
@@ -217,38 +251,39 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
     /// <inheritdoc />
     public async Task<bool> VerifyClaudeCodeConnectivityAsync(CancellationToken cancellationToken = default)
     {
-        var claudePath = GetClaudeExecutablePath();
-        if (string.IsNullOrEmpty(claudePath) || !File.Exists(claudePath))
+        var nodeDir = GetAppLocalNodeDir();
+        var nodeExe = Path.Combine(nodeDir, "node.exe");
+        var claudeJsPath = Path.Combine(GetAppLocalNpmPrefix(), "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+
+        if (!File.Exists(nodeExe) || !File.Exists(claudeJsPath))
         {
             Logger.Log("Claude Code 疎通確認: 実行ファイルが見つかりません。", LogLevel.Warning);
             return false;
         }
-        var nodeDir = GetAppLocalNodeDir();
+
         try
         {
-            Logger.Log("Claude Code の疎通確認を実行します（claude --version）。", LogLevel.Debug);
+            Logger.Log("Claude Code の疎通確認を実行します（node cli.js --version）。", LogLevel.Debug);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
+            
             using var proc = new Process();
-            proc.StartInfo.FileName = claudePath;
-            proc.StartInfo.Arguments = "--version";
+            proc.StartInfo.FileName = nodeExe;
+            proc.StartInfo.Arguments = $"\"{claudeJsPath}\" --version";
             proc.StartInfo.UseShellExecute = false;
             proc.StartInfo.CreateNoWindow = true;
             proc.StartInfo.RedirectStandardOutput = true;
             proc.StartInfo.RedirectStandardError = true;
             proc.StartInfo.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            
             if (!string.IsNullOrEmpty(nodeDir))
                 proc.StartInfo.Environment["PATH"] = nodeDir + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) ?? "";
+            
             proc.Start();
             await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
             var ok = proc.ExitCode == 0;
             Logger.Log(ok ? "Claude Code の疎通確認に成功しました。" : $"Claude Code の疎通確認に失敗しました（終了コード: {proc.ExitCode}）。", ok ? LogLevel.Info : LogLevel.Warning);
             return ok;
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.Log("Claude Code の疎通確認がタイムアウトしました。", LogLevel.Warning);
-            return false;
         }
         catch (Exception ex)
         {
@@ -260,38 +295,47 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
     /// <inheritdoc />
     public async Task<bool> IsLoggedInAsync(CancellationToken cancellationToken = default)
     {
-        var claudePath = GetClaudeExecutablePath();
-        if (string.IsNullOrEmpty(claudePath) || !File.Exists(claudePath))
+        var nodeDir = GetAppLocalNodeDir();
+        var nodeExe = Path.Combine(nodeDir, "node.exe");
+        var claudeJsPath = Path.Combine(GetAppLocalNpmPrefix(), "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+
+        if (!File.Exists(nodeExe) || !File.Exists(claudeJsPath))
         {
-            Logger.Log("ログイン確認: Claude Code 実行ファイルが見つかりません。", LogLevel.Warning);
+            Logger.Log("ログイン確認: 実行ファイルが見つかりません。", LogLevel.Warning);
             return false;
         }
-        var nodeDir = GetAppLocalNodeDir();
+
         try
         {
-            Logger.Log("Claude Code のログイン確認を実行します。", LogLevel.Debug);
+            Logger.Log("Claude Code のログイン確認を実行します（config get）。", LogLevel.Debug);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(20));
+            
             using var proc = new Process();
-            proc.StartInfo.FileName = claudePath;
-            proc.StartInfo.Arguments = $"-p \"{LoginTestPrompt}\"";
+            proc.StartInfo.FileName = nodeExe;
+            // config get はログインしていないと失敗するが、AI 呼び出し（トークン消費）は行わない
+            proc.StartInfo.Arguments = $"\"{claudeJsPath}\" config get";
             proc.StartInfo.UseShellExecute = false;
             proc.StartInfo.CreateNoWindow = true;
             proc.StartInfo.RedirectStandardOutput = true;
             proc.StartInfo.RedirectStandardError = true;
+            proc.StartInfo.RedirectStandardInput = true;
             proc.StartInfo.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            
+            // 非対話環境フラグ
+            proc.StartInfo.Environment["CI"] = "true";
             if (!string.IsNullOrEmpty(nodeDir))
                 proc.StartInfo.Environment["PATH"] = nodeDir + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) ?? "";
+
             proc.Start();
+            proc.StandardInput.Close();
+            
             await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+
+            // ログインしていれば ExitCode 0、していなければエラー（1など）が返る
             var ok = proc.ExitCode == 0;
             Logger.Log(ok ? "Claude Code のログイン確認に成功しました。" : $"Claude Code のログイン確認に失敗しました（終了コード: {proc.ExitCode}）。", ok ? LogLevel.Info : LogLevel.Warning);
             return ok;
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.Log("Claude Code のログイン確認がタイムアウトしました。", LogLevel.Warning);
-            return false;
         }
         catch (Exception ex)
         {
@@ -307,8 +351,7 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
         Logger.Log("Claude Code 環境の確保を開始します。", LogLevel.Info);
         // (1) Node.js: 基盤。未導入ならインストール
         progress?.Report("Node.js を確認しています...");
-        var nodeWasMissing = !IsNodeInstalled();
-        if (nodeWasMissing)
+        if (!IsNodeInstalled())
         {
             Logger.Log("Node.js が未導入のためインストールを実行します。", LogLevel.Info);
             progress?.Report("Node.js をインストールしています...");
@@ -316,24 +359,18 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
         }
         else
         {
-            Logger.Log("Node.js はインストール済みです。", LogLevel.Debug);
-            progress?.Report("Node.js はインストール済みです。");
+            Logger.Log("Node.js はインストール済みです。最新版への更新を試みます。", LogLevel.Debug);
+            progress?.Report("Node.js を更新しています...");
+            // Node.js の再インストール（上書き）で更新を試みる
+            await InstallNodeAsync(progress, cancellationToken).ConfigureAwait(false);
         }
 
-        // (2) Claude Code: Node の上に npm で導入。未導入、または今回 Node を入れた場合はインストール
-        progress?.Report("Claude Code を確認しています...");
-        var needClaude = !IsClaudeCodeInstalled() || nodeWasMissing;
-        if (needClaude)
-        {
-            Logger.Log("Claude Code が未導入または再インストールが必要なためインストールを実行します。", LogLevel.Info);
-            progress?.Report("Claude Code をインストールしています...");
-            await InstallClaudeCodeAsync(progress, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            Logger.Log("Claude Code はインストール済みです。", LogLevel.Debug);
-            progress?.Report("Claude Code はインストール済みです。");
-        }
+        // (2) Claude Code: Node の上に npm で導入。常に最新版をインストール（npm install -g は最新を入れる）
+        progress?.Report("Claude Code を確認・更新しています...");
+        Logger.Log("Claude Code のインストール/更新を実行します。", LogLevel.Info);
+        progress?.Report("Claude Code をインストール/更新しています...");
+        await InstallClaudeCodeAsync(progress, cancellationToken).ConfigureAwait(false);
+        
         Logger.Log("Claude Code 環境の確保が完了しました。", LogLevel.Info);
     }
 }

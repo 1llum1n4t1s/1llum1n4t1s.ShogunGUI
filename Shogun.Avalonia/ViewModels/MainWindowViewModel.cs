@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia.Threading;
 using AvaloniaEdit.Document;
 using Shogun.Avalonia.Models;
 using Shogun.Avalonia.Services;
@@ -23,6 +24,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly ISettingsService _settingsService;
     private readonly IClaudeCodeSetupService _claudeCodeSetupService;
     private readonly IClaudeCodeRunService _claudeCodeRunService;
+    private readonly IAgentWorkerService _agentWorkerService;
     private readonly IClaudeModelsService _claudeModelsService;
     private bool _claudeCodeEnvInitialized;
 
@@ -51,6 +53,20 @@ public partial class MainWindowViewModel : ObservableObject
     public AgentPaneViewModel? RightPane1 => AgentPanes.Count > 7 ? AgentPanes[7] : null;
     public AgentPaneViewModel? RightPane2 => AgentPanes.Count > 8 ? AgentPanes[8] : null;
     public AgentPaneViewModel? RightPane3 => AgentPanes.Count > 9 ? AgentPanes[9] : null;
+
+    private void NotifyPanePropertiesChanged()
+    {
+        OnPropertyChanged(nameof(LeftPane0));
+        OnPropertyChanged(nameof(LeftPane1));
+        OnPropertyChanged(nameof(CenterPane0));
+        OnPropertyChanged(nameof(CenterPane1));
+        OnPropertyChanged(nameof(CenterPane2));
+        OnPropertyChanged(nameof(CenterPane3));
+        OnPropertyChanged(nameof(RightPane0));
+        OnPropertyChanged(nameof(RightPane1));
+        OnPropertyChanged(nameof(RightPane2));
+        OnPropertyChanged(nameof(RightPane3));
+    }
 
     [ObservableProperty]
     private ObservableCollection<ChatMessage> _chatMessages = new();
@@ -104,19 +120,28 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _loadingMessage = "起動準備中...";
 
-    public MainWindowViewModel(IProjectService? projectService = null, IAiService? aiService = null, IShogunQueueService? queueService = null, IAgentOrchestrator? orchestrator = null, ISettingsService? settingsService = null, IClaudeCodeSetupService? claudeCodeSetupService = null, IClaudeCodeRunService? claudeCodeRunService = null, IClaudeModelsService? claudeModelsService = null)
+    public MainWindowViewModel(IProjectService? projectService = null, IAiService? aiService = null, IShogunQueueService? queueService = null, IAgentOrchestrator? orchestrator = null, ISettingsService? settingsService = null, IClaudeCodeSetupService? claudeCodeSetupService = null, IClaudeCodeRunService? claudeCodeRunService = null, IAgentWorkerService? agentWorkerService = null, IClaudeModelsService? claudeModelsService = null)
     {
         _projectService = projectService ?? new ProjectService();
         _settingsService = settingsService ?? new SettingsService();
         _claudeCodeSetupService = claudeCodeSetupService ?? new ClaudeCodeSetupService();
         _queueService = queueService ?? new ShogunQueueService(_settingsService);
-        _claudeCodeRunService = claudeCodeRunService ?? new ClaudeCodeRunService(_claudeCodeSetupService, _queueService, new InstructionsLoader(_queueService));
+        var instructionsLoader = new InstructionsLoader(_queueService);
+        var processHost = new ClaudeCodeProcessHost(_claudeCodeSetupService, _queueService);
+        _claudeCodeRunService = claudeCodeRunService ?? new ClaudeCodeRunService(processHost, _claudeCodeSetupService, _queueService, instructionsLoader);
+        _agentWorkerService = agentWorkerService ?? new AgentWorkerService(_claudeCodeRunService, _queueService, processHost);
         _claudeModelsService = claudeModelsService ?? new ClaudeCodeModelsService();
         _aiService = aiService ?? new AiService();
-        _orchestrator = orchestrator ?? new AgentOrchestrator(_queueService, _aiService, new InstructionsLoader(_queueService));
+        _orchestrator = orchestrator ?? new AgentOrchestrator(_queueService, _aiService, instructionsLoader);
         LoadProjects();
         InitializeDummyData();
         RefreshDashboard();
+    }
+
+    /// <summary>アプリ終了時に呼ぶ。常駐プロセス・ワーカーを終了する。</summary>
+    public void OnAppShutdown()
+    {
+        _agentWorkerService.StopAll();
     }
 
     /// <summary>起動時: Node.js / Claude Code の確認・自動インストールとログイン確認を行う。RealTimeTranslator の InitializeModelsAsync と同様に UI で進捗を表示する。</summary>
@@ -147,6 +172,40 @@ public partial class MainWindowViewModel : ObservableObject
                 return;
             }
 
+            LoadingMessage = "ログイン状態を確認しています...";
+            var isLoggedIn = await _claudeCodeSetupService.IsLoggedInAsync().ConfigureAwait(true);
+            if (!isLoggedIn)
+            {
+                Logger.Log("Claude Code にログインしていません。ブラウザを起動してログインを促します。", LogLevel.Info);
+                LoadingMessage = "ログインのためブラウザを起動します。認証を完了してください...";
+                var loginStarted = await _claudeCodeSetupService.RunLoginAsync(progress).ConfigureAwait(true);
+                if (!loginStarted)
+                {
+                    LoadingMessage = "ログインプロセスの起動に失敗しました。設定画面から手動でログインしてください。";
+                    return;
+                }
+                
+                // ログイン完了を待機（ポーリング）
+                var retryCount = 0;
+                while (retryCount < 60) // 最大10分程度待機
+                {
+                    await Task.Delay(10000).ConfigureAwait(true); // 10秒おきに確認
+                    if (await _claudeCodeSetupService.IsLoggedInAsync().ConfigureAwait(true))
+                    {
+                        isLoggedIn = true;
+                        break;
+                    }
+                    retryCount++;
+                    LoadingMessage = $"ログイン待機中 ({retryCount * 10}秒経過)... ブラウザで承認してください";
+                }
+
+                if (!isLoggedIn)
+                {
+                    LoadingMessage = "ログインが確認できませんでした。アプリを再起動するか、設定画面から再度試してください。";
+                    return;
+                }
+            }
+
             LoadingMessage = "モデル一覧を取得しています...";
             var modelsObtained = await UpgradeSettingsModelsToLatestInFamilyAsync().ConfigureAwait(true);
             if (modelsObtained)
@@ -158,6 +217,44 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 Logger.Log("起動時環境初期化が完了しました（モデル一覧は取得できませんでした）。", LogLevel.Warning);
             }
+            LoadingMessage = "エージェントワーカーを起動しています...";
+            await _agentWorkerService.StartAllAsync(
+                onProcessReady: async (roleLabel, message) =>
+                {
+                    // UI スレッドに投げて各ペインを更新
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        AgentPaneViewModel? pane = null;
+                        if (roleLabel == "将軍")
+                            pane = LeftPane0;
+                        else if (roleLabel == "家老")
+                            pane = LeftPane1;
+                        else if (roleLabel.StartsWith("足軽", StringComparison.Ordinal))
+                        {
+                            if (int.TryParse(roleLabel.Substring(2), out var idx))
+                            {
+                                pane = idx switch
+                                {
+                                    1 => CenterPane0,
+                                    2 => CenterPane1,
+                                    3 => CenterPane2,
+                                    4 => CenterPane3,
+                                    5 => RightPane0,
+                                    6 => RightPane1,
+                                    7 => RightPane2,
+                                    8 => RightPane3,
+                                    _ => null
+                                };
+                            }
+                        }
+                        if (pane != null)
+                            pane.Blocks.Add(new PaneBlock { Content = message, Timestamp = DateTime.Now });
+                    });
+                    await Task.CompletedTask.ConfigureAwait(false);
+                }
+            ).ConfigureAwait(true);
+            if (modelsObtained)
+                LoadingMessage = "準備完了";
         }
         catch (Exception ex)
         {
@@ -167,6 +264,7 @@ public partial class MainWindowViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+            Logger.Log("起動時環境初期化が終了し、画面が表示されます。", LogLevel.Info);
         }
     }
 
@@ -233,36 +331,46 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshAgentPanesFromQueue();
     }
 
-    /// <summary>queue/tasks と queue/reports から各ペインの表示を更新する。</summary>
+    /// <summary>queue/tasks と queue/reports から各ペインの表示を更新する。ブロックが空の場合のみ追加。</summary>
     private void RefreshAgentPanesFromQueue()
     {
         if (AgentPanes.Count < 2)
             return;
-        var karoContent = "queue/shogun_to_karo.yaml の最新: " + string.Join("; ", _queueService.ReadShogunToKaro().Take(3).Select(c => c.Id + " " + c.Command));
-        AgentPanes[1].Blocks.Clear();
-        AgentPanes[1].Blocks.Add(new PaneBlock { Content = karoContent, Timestamp = DateTime.Now });
+        
+        // 家老のペイン：既に「指示待ち」以外のブロックがあれば更新しない
+        if (AgentPanes[1].Blocks.Count <= 1)
+        {
+            var commands = _queueService.ReadShogunToKaro().Take(3).ToList();
+            if (commands.Any())
+            {
+                var karoContent = "queue/shogun_to_karo.yaml の最新: " + string.Join("; ", commands.Select(c => c.Id + " " + c.Command));
+                AgentPanes[1].Blocks.Add(new PaneBlock { Content = karoContent, Timestamp = DateTime.Now });
+            }
+        }
+        
         var ashigaruCount = _queueService.GetAshigaruCount();
         for (var i = 1; i <= ashigaruCount && i + 1 < AgentPanes.Count; i++)
         {
+            // 足軽ペイン：既に「指示待ち」以外のブロックがあればスキップ
+            if (AgentPanes[i + 1].Blocks.Count > 1)
+                continue;
+                
             var task = _queueService.ReadTaskYaml(i);
             var report = _queueService.ReadReportYaml(i);
-            AgentPanes[i + 1].Blocks.Clear();
+            
             if (!string.IsNullOrEmpty(task))
                 AgentPanes[i + 1].Blocks.Add(new PaneBlock { Content = "任務: " + task.Trim().Replace("\r\n", " ").Replace("\n", " "), Timestamp = DateTime.Now });
             if (!string.IsNullOrEmpty(report))
                 AgentPanes[i + 1].Blocks.Add(new PaneBlock { Content = "報告: " + report.Trim().Replace("\r\n", " ").Replace("\n", " "), Timestamp = DateTime.Now });
         }
+        NotifyPanePropertiesChanged();
     }
 
     /// <summary>AIサービスを再初期化する（設定変更後）。</summary>
     public void RefreshAiService()
     {
         _aiService = new AiService();
-        OnPropertyChanged(nameof(IsAiAvailable));
     }
-
-    /// <summary>AIサービスが利用可能か。</summary>
-    public bool IsAiAvailable => _aiService.IsAvailable;
 
     /// <summary>プロジェクト一覧を読み込む。</summary>
     public void LoadProjects()
@@ -284,6 +392,8 @@ public partial class MainWindowViewModel : ObservableObject
         var ashigaruCount = _queueService.GetAshigaruCount();
         for (var i = 1; i <= ashigaruCount; i++)
             paneNames.Add($"足軽{i}");
+        
+        AgentPanes.Clear();
         foreach (var name in paneNames)
         {
             var pane = new AgentPaneViewModel { DisplayName = name };
@@ -294,35 +404,10 @@ public partial class MainWindowViewModel : ObservableObject
                     : "次の指示をお待ち申し上げる。",
                 Timestamp = DateTime.Now
             });
-            if (name == "将軍" && IsAiAvailable)
-            {
-                pane.Blocks.Add(new PaneBlock
-                {
-                    Content = "何かお手伝いできることはありますか？",
-                    Timestamp = DateTime.Now
-                });
-            }
-            else if (name == "将軍" && !IsAiAvailable)
-            {
-                pane.Blocks.Add(new PaneBlock
-                {
-                    Content = "AI機能を使用するには、設定画面でAPIキーとモデル名を設定してください。",
-                    Timestamp = DateTime.Now
-                });
-            }
             AgentPanes.Add(pane);
         }
 
-        OnPropertyChanged(nameof(LeftPane0));
-        OnPropertyChanged(nameof(LeftPane1));
-        OnPropertyChanged(nameof(CenterPane0));
-        OnPropertyChanged(nameof(CenterPane1));
-        OnPropertyChanged(nameof(CenterPane2));
-        OnPropertyChanged(nameof(CenterPane3));
-        OnPropertyChanged(nameof(RightPane0));
-        OnPropertyChanged(nameof(RightPane1));
-        OnPropertyChanged(nameof(RightPane2));
-        OnPropertyChanged(nameof(RightPane3));
+        NotifyPanePropertiesChanged();
 
         var welcomeMessage = new ChatMessage
         {
@@ -331,27 +416,6 @@ public partial class MainWindowViewModel : ObservableObject
             ProjectId = ""
         };
         ChatMessages.Add(welcomeMessage);
-
-        if (IsAiAvailable)
-        {
-            var aiMessage = new ChatMessage
-            {
-                Sender = "ai",
-                Content = "何かお手伝いできることはありますか？",
-                ProjectId = ""
-            };
-            ChatMessages.Add(aiMessage);
-        }
-        else
-        {
-            var aiMessage = new ChatMessage
-            {
-                Sender = "system",
-                Content = "AI機能を使用するには、設定画面でAPIキーとモデル名を設定してください。",
-                ProjectId = ""
-            };
-            ChatMessages.Add(aiMessage);
-        }
 
         CodeDocument = new TextDocument(string.Empty);
     }
@@ -383,93 +447,67 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             Logger.Log($"SendMessageAsync 開始: Input='{inputCopy}', ProjectId='{projectId}'", LogLevel.Info);
+            
+            Logger.Log("Claude Code CLI 連携モードで実行を開始します。", LogLevel.Info);
+
             string resultMessage;
-            if (_aiService.IsAvailable)
+            if (_claudeCodeSetupService.IsClaudeCodeInstalled())
             {
-                Logger.Log("AIサービスが利用可能です。将軍による指示解決を開始します。", LogLevel.Debug);
-                var commandForKaro = await _orchestrator.ResolveShogunCommandAsync(inputCopy, string.IsNullOrEmpty(projectId) ? null : projectId);
-                Logger.Log($"将軍が指示を解決しました: {commandForKaro}", LogLevel.Debug);
-                var id = _queueService.AppendCommand(commandForKaro, string.IsNullOrEmpty(projectId) ? null : projectId, "medium");
-                resultMessage = $"将軍が指示文を生成し、キューに追加しました（{id}）。家老・足軽を実行中…";
-                var progressMessage = new ChatMessage
+                Logger.Log("Claude Code CLI がインストールされています。ジョブを投入します。", LogLevel.Debug);
+                var shogunProgress = new Progress<string>(msg =>
                 {
-                    Sender = "system",
-                    Content = resultMessage,
-                    ProjectId = projectId,
-                    Timestamp = DateTime.Now
-                };
-                ChatMessages.Add(progressMessage);
-                if (AgentPanes.Count > 0)
-                    AgentPanes[0].Blocks.Add(new PaneBlock { Content = resultMessage, Timestamp = DateTime.Now });
-                
-                Logger.Log($"オーケストレーターの実行を開始します (CommandId: {id})", LogLevel.Info);
-                var runResult = await _orchestrator.RunAsync(id);
-                resultMessage = runResult;
-                Logger.Log($"オーケストレーターの実行が完了しました: {resultMessage}", LogLevel.Info);
-            }
-            else
-            {
-                Logger.Log("AIサービスが利用不可です。直接キューに追加し、Claude Code CLI を起動します。", LogLevel.Info);
-                var id = _queueService.AppendCommand(inputCopy, string.IsNullOrEmpty(projectId) ? null : projectId, "medium");
-                Logger.Log($"コマンドをキューに追加しました: {id}", LogLevel.Debug);
-                
-                if (_claudeCodeSetupService.IsClaudeCodeInstalled())
-                {
-                    Logger.Log("Claude Code CLI がインストールされています。実行を開始します。", LogLevel.Debug);
-                    var progress = new Progress<string>(msg =>
+                    Logger.Log($"[将軍] {msg}", LogLevel.Info);
+                    Dispatcher.UIThread.Post(() =>
                     {
-                        Logger.Log($"[ClaudeCodeProgress] {msg}", LogLevel.Info);
                         var m = new ChatMessage { Sender = "system", Content = msg, ProjectId = projectId, Timestamp = DateTime.Now };
                         ChatMessages.Add(m);
                         if (AgentPanes.Count > 0)
                             AgentPanes[0].Blocks.Add(new PaneBlock { Content = msg, Timestamp = DateTime.Now });
                     });
-                    
-                    Logger.Log("家老 (RunKaroAsync) を起動します。", LogLevel.Info);
-                    var karoOk = await _claudeCodeRunService.RunKaroAsync(progress).ConfigureAwait(true);
-                    if (!karoOk)
-                    {
-                        resultMessage = $"指示をキューに追加しました（{id}）。家老の実行に失敗しました。ダッシュボードで確認してください。";
-                        Logger.Log("家老の実行に失敗しました。", LogLevel.Error);
-                    }
-                    else
-                    {
-                        Logger.Log("家老の実行に成功しました。足軽のタスクを確認します。", LogLevel.Debug);
-                        var ashigaruCount = _queueService.GetAshigaruCount();
-                        var assigned = new List<int>();
-                        for (var i = 1; i <= ashigaruCount; i++)
-                        {
-                            var taskContent = _queueService.ReadTaskYaml(i);
-                            if (!string.IsNullOrWhiteSpace(taskContent) && (taskContent.Contains("task:", StringComparison.Ordinal) || taskContent.Contains("status:", StringComparison.Ordinal)))
-                                assigned.Add(i);
-                        }
-                        
-                        if (assigned.Count > 0)
-                        {
-                            Logger.Log($"足軽 {string.Join(", ", assigned)} にタスクが割り当てられています。並列実行を開始します。", LogLevel.Info);
-                            var ashigaruTasks = assigned.Select(n => _claudeCodeRunService.RunAshigaruAsync(n, progress)).ToArray();
-                            await Task.WhenAll(ashigaruTasks).ConfigureAwait(true);
-                            
-                            Logger.Log("全足軽の実行が完了しました。報告集約を開始します。", LogLevel.Info);
-                            var reportOk = await _claudeCodeRunService.RunKaroReportAggregationAsync(progress).ConfigureAwait(true);
-                            resultMessage = reportOk
-                                ? $"指示をキューに追加しました（{id}）。家老・足軽{assigned.Count}名・家老（報告集約）の実行が完了しました。"
-                                : $"指示をキューに追加しました（{id}）。家老・足軽の実行は完了しましたが、家老（報告集約）に失敗しました。ダッシュボードで確認してください。";
-                            Logger.Log($"報告集約結果: {reportOk}", LogLevel.Info);
-                        }
-                        else
-                        {
-                            resultMessage = $"指示をキューに追加しました（{id}）。家老（Claude Code）の実行が完了しました。（割り当てられた足軽なし）";
-                            Logger.Log("割り当てられた足軽はありませんでした。", LogLevel.Info);
-                        }
-                    }
-                }
-                else
+                });
+                var karoProgress = new Progress<string>(msg =>
                 {
-                    resultMessage = $"指示をキューに追加しました（{id}）。Claude Code CLI が未インストールのため家老は実行されません。設定でインストールしてください。";
-                    Logger.Log("Claude Code CLI が未インストールです。", LogLevel.Warning);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (AgentPanes.Count > 1)
+                            AgentPanes[1].Blocks.Add(new PaneBlock { Content = msg, Timestamp = DateTime.Now });
+                    });
+                });
+                var reportProgress = new Progress<string>(msg =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (AgentPanes.Count > 1)
+                            AgentPanes[1].Blocks.Add(new PaneBlock { Content = "[集約] " + msg, Timestamp = DateTime.Now });
+                    });
+                });
+                IProgress<string> AshigaruProgressFor(int n)
+                {
+                    var paneIndex = n + 1;
+                    return new Progress<string>(msg =>
+                    {
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (AgentPanes.Count > paneIndex)
+                                AgentPanes[paneIndex].Blocks.Add(new PaneBlock { Content = msg, Timestamp = DateTime.Now });
+                        });
+                    });
                 }
+                resultMessage = await _agentWorkerService.SubmitMessageAsync(
+                    inputCopy,
+                    string.IsNullOrEmpty(projectId) ? null : projectId,
+                    shogunProgress,
+                    karoProgress,
+                    reportProgress,
+                    AshigaruProgressFor,
+                    default).ConfigureAwait(true);
             }
+            else
+            {
+                resultMessage = "Claude Code CLI が未インストールのため実行できません。設定でインストールしてください。";
+                Logger.Log("Claude Code CLI が未インストールです。", LogLevel.Warning);
+            }
+
             var sysMessage = new ChatMessage
             {
                 Sender = "system",
