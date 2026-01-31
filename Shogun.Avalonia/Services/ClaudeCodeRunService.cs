@@ -13,7 +13,21 @@ namespace Shogun.Avalonia.Services;
 /// </summary>
 public class ClaudeCodeRunService : IClaudeCodeRunService
 {
-    private const string KaroUserPrompt = "queue/shogun_to_karo.yaml に新しい指示がある。確認して実行せよ。";
+    private const string KaroUserPrompt = @"queue/shogun_to_karo.yaml に新しい指示がある。確認して、以下のJSON形式で足軽タスク情報を出力せよ。
+
+```json
+{
+  ""tasks"": [
+    {
+      ""ashigaru_id"": 1,
+      ""description"": ""タスクの説明"",
+      ""target_path"": ""対象ファイルパス（オプション）""
+    }
+  ]
+}
+```
+
+注意: 複数の独立したタスクなら複数足軽に分散して並列実行させよ。JSONのみ出力し、余計な説明は不要。";
     private const string KaroReportUserPrompt = "queue/reports/ の報告を確認し、dashboard.md の「戦果」を更新せよ。";
 
     private readonly IClaudeCodeProcessHost _processHost;
@@ -35,6 +49,11 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
     {
         var karoInstructions = _instructionsLoader.LoadKaroInstructions() ?? string.Empty;
         var result = await RunClaudeAsync(KaroUserPrompt, karoInstructions, progress, "家老", cancellationToken).ConfigureAwait(false);
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
+        {
+            // 家老の出力（JSON）を解析して足軽タスクファイルを生成
+            await GenerateAshigaruTasksFromKaroOutputAsync(result.Output, cancellationToken).ConfigureAwait(false);
+        }
         return result.Success;
     }
 
@@ -111,6 +130,42 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
             {
                 try { File.Delete(promptFile); } catch { /* ignore */ }
             }
+        }
+    }
+
+    /// <summary>家老の JSON 出力から足軽タスクを生成する。</summary>
+    private async Task GenerateAshigaruTasksFromKaroOutputAsync(string karoJson, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var repoRoot = _queueService.GetRepoRoot();
+            var json = System.Text.Json.JsonDocument.Parse(karoJson);
+            var root = json.RootElement;
+            if (!root.TryGetProperty("tasks", out var tasksElement) || tasksElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return;
+            foreach (var taskElem in tasksElement.EnumerateArray())
+            {
+                if (!taskElem.TryGetProperty("ashigaru_id", out var idElem))
+                    continue;
+                var ashigaruId = idElem.GetInt32();
+                var description = taskElem.TryGetProperty("description", out var descElem) ? descElem.GetString() ?? "" : "";
+                var targetPath = taskElem.TryGetProperty("target_path", out var pathElem) ? pathElem.GetString() ?? "" : "";
+                var yaml = $"""
+task:
+  task_id: task_{ashigaruId}_{DateTime.Now:HHmmss}
+  description: "{description}"
+  {(string.IsNullOrEmpty(targetPath) ? "" : $"target_path: {targetPath}")}
+  status: assigned
+  timestamp: "{DateTime.UtcNow:O}"
+""";
+                var taskFilePath = Path.Combine(repoRoot, "queue", "tasks", $"ashigaru{ashigaruId}.yaml");
+                await File.WriteAllTextAsync(taskFilePath, yaml, cancellationToken).ConfigureAwait(false);
+                Logger.Log($"足軽{ashigaruId}タスクファイルを生成しました: {taskFilePath}", LogLevel.Debug);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"足軽タスク生成エラー: {ex.Message}", LogLevel.Warning);
         }
     }
 }
