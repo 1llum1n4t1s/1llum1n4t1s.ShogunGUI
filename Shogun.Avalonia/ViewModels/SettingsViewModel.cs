@@ -129,25 +129,15 @@ public partial class SettingsViewModel : ObservableObject
     /// <summary>保存済み ID（ModelShogun/Karo/Ashigaru）から SelectedModel* を同期する。AllModelOptions 設定後に呼ぶ。</summary>
     private void SyncSelectedFromIds()
     {
-        // ID を一時保存
-        var shogunId = ModelShogun;
-        var karoId = ModelKaro;
-        var ashigaruId = ModelAshigaru;
-
-        SyncOne(shogunId, o => SelectedModelShogun = o);
-        SyncOne(karoId, o => SelectedModelKaro = o);
-        SyncOne(ashigaruId, o => SelectedModelAshigaru = o);
-
-        // SyncOne の副作用で ModelShogun 等が書き換わった可能性があるため戻す
-        ModelShogun = shogunId;
-        ModelKaro = karoId;
-        ModelAshigaru = ashigaruId;
+        SyncOne(ModelShogun, o => SelectedModelShogun = o);
+        SyncOne(ModelKaro, o => SelectedModelKaro = o);
+        SyncOne(ModelAshigaru, o => SelectedModelAshigaru = o);
     }
 
     /// <summary>ID に対応する ModelOption を AllModelOptions から探し setSelected で設定する。</summary>
     private void SyncOne(string id, Action<ModelOption?> setSelected)
     {
-        if (string.IsNullOrEmpty(id) || ClaudeCodeModelsService.IsInvalidModelId(id))
+        if (ClaudeCodeModelsService.IsInvalidModelId(id))
         {
             setSelected(null);
             return;
@@ -303,10 +293,17 @@ public partial class SettingsViewModel : ObservableObject
         if (AllModelOptions.Count == 0)
             return;
         var list = AllModelOptions.Select(x => x.Id).ToList();
-        ModelShogun = ModelFamilyHelper.UpgradeToLatestInFamily(ModelShogun, list);
-        ModelKaro = ModelFamilyHelper.UpgradeToLatestInFamily(ModelKaro, list);
-        ModelAshigaru = ModelFamilyHelper.UpgradeToLatestInFamily(ModelAshigaru, list);
-        SyncSelectedFromIds();
+        var newShogun = ModelFamilyHelper.UpgradeToLatestInFamily(ModelShogun, list);
+        var newKaro = ModelFamilyHelper.UpgradeToLatestInFamily(ModelKaro, list);
+        var newAshigaru = ModelFamilyHelper.UpgradeToLatestInFamily(ModelAshigaru, list);
+        
+        if (newShogun != ModelShogun || newKaro != ModelKaro || newAshigaru != ModelAshigaru)
+        {
+            ModelShogun = newShogun;
+            ModelKaro = newKaro;
+            ModelAshigaru = newAshigaru;
+            SyncSelectedFromIds();
+        }
     }
 
     /// <summary>同一ファミリ最新へ更新したモデル設定を永続化する（設定画面を開いたときに自動保存）。</summary>
@@ -329,7 +326,9 @@ public partial class SettingsViewModel : ObservableObject
             ThinkingKaro = ThinkingKaro,
             ThinkingAshigaru = ThinkingAshigaru,
             ApiEndpoint = current.ApiEndpoint,
-            RepoRoot = current.RepoRoot
+            RepoRoot = current.RepoRoot,
+            KaroExecutionPermissionMode = current.KaroExecutionPermissionMode,
+            DocumentRoot = current.DocumentRoot
         });
     }
 

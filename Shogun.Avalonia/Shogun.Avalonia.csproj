@@ -30,6 +30,7 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.11" />
     <PackageReference Include="ActiproSoftware.Controls.Avalonia" Version="25.2.2" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Velopack" Version="0.0.1298" />
     <PackageReference Include="log4net" Version="3.2.0" />

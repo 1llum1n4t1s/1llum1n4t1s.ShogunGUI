@@ -4,6 +4,7 @@
              x:Class="Shogun.Avalonia.App"
              RequestedThemeVariant="Dark">
     <Application.Styles>
+        <FluentTheme />
         <actipro:ModernTheme />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>
     </Application.Styles>

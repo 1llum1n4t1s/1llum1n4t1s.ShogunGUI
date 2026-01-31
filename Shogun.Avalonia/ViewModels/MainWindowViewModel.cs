@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -410,23 +411,35 @@ public partial class MainWindowViewModel : ObservableObject
             ThinkingKaro = current.ThinkingKaro,
             ThinkingAshigaru = current.ThinkingAshigaru,
             ApiEndpoint = current.ApiEndpoint,
-            RepoRoot = current.RepoRoot
+            RepoRoot = current.RepoRoot,
+            KaroExecutionPermissionMode = current.KaroExecutionPermissionMode,
+            DocumentRoot = current.DocumentRoot
         };
         _settingsService.Save(newSettings);
         UpdateModelInfos(newSettings);
         return true;
     }
 
-    /// <summary>dashboard.md を読み込み表示を更新する。</summary>
+    /// <summary>dashboard.md を読み込み表示を更新する。ファイルが無い場合は初期内容で作成してから表示する。</summary>
     [RelayCommand]
     private void RefreshDashboard()
     {
-        DashboardContent = _queueService.ReadDashboardMd();
-        if (string.IsNullOrEmpty(DashboardContent))
+        var content = _queueService.ReadDashboardMd();
+        if (string.IsNullOrEmpty(content))
         {
             var repoRoot = _queueService.GetRepoRoot();
-            DashboardContent = $"（dashboard.md がありません。設定でワークスペースルートを指定してください。現在のルート: {repoRoot}）";
+            if (!string.IsNullOrEmpty(repoRoot) && Directory.Exists(repoRoot))
+            {
+                const string initialDashboard = "# Dashboard\n\n## 戦果\n\n（まだ報告なし。家老（報告集約）実行後に更新されます。）\n";
+                _queueService.WriteDashboardMd(initialDashboard);
+                content = initialDashboard;
+            }
+            else
+            {
+                content = $"（dashboard.md がありません。queue/config の基準はドキュメントルート（document_root）です。現在: {repoRoot ?? "未設定"}）";
+            }
         }
+        DashboardContent = content;
         RefreshAgentPanesFromQueue();
     }
 

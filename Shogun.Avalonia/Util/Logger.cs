@@ -32,7 +32,7 @@ public static class Logger
         LogLevel.Info;
 #endif
 
-    /// <summary>ログ出力先ディレクトリ（exe と同じ BaseDirectory）。</summary>
+    /// <summary>ログ出力先ディレクトリ（アプリルート）。log4net のログはアプリルートのみに使用。アプリルートは node/Claude インストール・log4net のログのみに使用。</summary>
     private static string LogDirectory => AppDomain.CurrentDomain.BaseDirectory;
 
     /// <summary>log4net を初期化する。</summary>

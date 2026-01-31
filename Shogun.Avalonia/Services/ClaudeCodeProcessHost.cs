@@ -60,9 +60,13 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
             var repoRoot = _queueService.GetRepoRoot();
             if (string.IsNullOrEmpty(repoRoot) || !Directory.Exists(repoRoot))
             {
-                Logger.Log("ClaudeCodeProcessHost: ワークスペースルートが無効です。", LogLevel.Error);
+                Logger.Log("ClaudeCodeProcessHost: queue/config の基準パスが無効です。", LogLevel.Error);
                 return;
             }
+            Logger.Log($"ClaudeCodeProcessHost: RUNNER_CWD（作業ディレクトリ）={repoRoot}", LogLevel.Info);
+            var queueDir = Path.Combine(repoRoot, "queue");
+            if (!Directory.Exists(queueDir))
+                Logger.Log($"ClaudeCodeProcessHost: queue/ が基準パス配下にありません。足軽のタスク・報告はこのパスを基準にします: {queueDir}", LogLevel.Warning);
             var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Shogun.Avalonia");
             Directory.CreateDirectory(baseDir);
             var runnerPath = Path.Combine(baseDir, "agent-runner.js");
@@ -115,7 +119,8 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
         string? modelId = null,
         bool thinking = false,
         IProgress<string>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? cwdOverride = null)
     {
         if (!_processes.TryGetValue(roleLabel, out var entry))
         {
@@ -128,6 +133,7 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
         sb.AppendLine($"systemPromptFile: {EscapeYaml(systemPromptPath)}");
         if (!string.IsNullOrEmpty(modelId)) sb.AppendLine($"modelId: {EscapeYaml(modelId)}");
         sb.AppendLine($"thinking: {thinking.ToString().ToLower()}");
+        if (!string.IsNullOrEmpty(cwdOverride)) sb.AppendLine($"cwd: {EscapeYaml(cwdOverride)}");
         sb.AppendLine("---");
         var line = sb.ToString();
         var tcs = new TaskCompletionSource<(bool Success, string Output)>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -149,7 +155,7 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
             await entry.StdinWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(180)); // 180秒のタイムアウト
+            cts.CancelAfter(TimeSpan.FromSeconds(600)); // 600秒（足軽の分析・実装完了を待つため）
             return await tcs.Task.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -357,34 +363,61 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
         }
         else if (line.StartsWith("RESULT:", StringComparison.Ordinal))
         {
-            var yaml = line.Length > 7 ? line.Substring(7) : "";
+            var rest = line.Length > 7 ? line.Substring(7) : "";
             bool success = false;
             string output = "";
             try
             {
-                // 簡易的な YAML 解析 (exitCode: N, output: "...")
-                var parts = yaml.Split(new[] { "exitCode:", "output:" }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
+                var exitCode = 1;
+                var outputIdx = rest.IndexOf("output:", StringComparison.OrdinalIgnoreCase);
+                if (outputIdx >= 0)
                 {
-                    int.TryParse(parts[0].Trim().Trim(','), out var exitCode);
-                    output = parts[1].Trim();
-                    if (output.StartsWith('"') && output.EndsWith('"'))
-                        output = output.Substring(1, output.Length - 2).Replace("\\\\", "\\").Replace("\\\"", "\"");
-                    success = (exitCode == 0);
+                    var exitStr = rest[..outputIdx].Trim();
+                    var comma = exitStr.LastIndexOf(',');
+                    if (comma >= 0)
+                        int.TryParse(exitStr[(comma + 1)..].Trim(), out exitCode);
+                    var valueStart = rest.IndexOf('"', outputIdx + 7);
+                    if (valueStart >= 0)
+                    {
+                        output = ExtractQuotedValue(rest, valueStart);
+                        success = (exitCode == 0);
+                    }
                 }
-                else
-                {
-                    output = yaml;
-                    success = false;
-                }
+                if (string.IsNullOrEmpty(output))
+                    output = rest;
             }
             catch
             {
-                output = yaml;
+                output = rest;
                 success = false;
             }
             tcs?.TrySetResult((success, output));
         }
+    }
+
+    /// <summary>output: "..." の引用符内の値を取り出し、\n \r \t \" \\ を復元する。</summary>
+    private static string ExtractQuotedValue(string line, int quoteStartIndex)
+    {
+        if (quoteStartIndex < 0 || quoteStartIndex >= line.Length || line[quoteStartIndex] != '"')
+            return string.Empty;
+        var sb = new StringBuilder();
+        for (var i = quoteStartIndex + 1; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (c == '"')
+                return sb.ToString();
+            if (c == '\\' && i + 1 < line.Length)
+            {
+                var next = line[i + 1];
+                if (next == 'n') { sb.Append('\n'); i++; continue; }
+                if (next == 'r') { sb.Append('\r'); i++; continue; }
+                if (next == 't') { sb.Append('\t'); i++; continue; }
+                if (next == '"') { sb.Append('"'); i++; continue; }
+                if (next == '\\') { sb.Append('\\'); i++; continue; }
+            }
+            sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     private static async Task ReadStderrLoopAsync(StreamReader stderr)
@@ -453,6 +486,7 @@ rl.on('line', (line) => {
     const systemPromptFile = job.systemPromptFile || '';
     const modelId = job.modelId;
     const thinking = job.thinking === 'true';
+    const jobCwd = (job.cwd && String(job.cwd).trim()) || cwd;
 
     const args = [cliJs, '-p', prompt, '--append-system-prompt-file', systemPromptFile];
     if (modelId) {
@@ -462,15 +496,15 @@ rl.on('line', (line) => {
       args.push('--thinking');
     }
 
-    process.stderr.write(`[RUNNER] Spawning CLI: ${nodeExe} ${args.join(' ')}\n`);
+    process.stderr.write(`[RUNNER] Spawning CLI: ${nodeExe} ${args.join(' ')} (cwd=${jobCwd})\n`);
     
     let childStarted = false;
     let stderrOutput = '';
     try {
       const child = spawn(nodeExe, args, {
-        cwd,
+        cwd: jobCwd,
         stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 120000
+        timeout: 600000
       });
       childStarted = true;
       

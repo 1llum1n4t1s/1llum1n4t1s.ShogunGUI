@@ -20,6 +20,7 @@ public class ClaudeCodeSetupService : IClaudeCodeSetupService
     private const string NodeZipName = "node-v20.20.0-win-x64.zip";
     private static readonly string NodeDownloadUrl = $"https://nodejs.org/download/release/latest-v20.x/{NodeZipName}";
 
+    /// <summary>アプリルート（Node/Claude インストール先）。LocalApplicationData\Shogun.Avalonia。アプリルートは node インストール・Claude Code インストール・log4net のログのみに使用。</summary>
     private static string BaseDir
     {
         get

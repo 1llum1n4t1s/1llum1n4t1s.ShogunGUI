@@ -24,7 +24,9 @@ public class ClaudeCodeModelsService : IClaudeModelsService
 
     /// <summary>「claude-code」は CLI パッケージ名でありモデル ID ではない。フォールバックに使わずエラー扱いする。</summary>
     public static bool IsInvalidModelId(string? id) =>
-        string.Equals(id?.Trim(), "claude-code", StringComparison.OrdinalIgnoreCase);
+        string.IsNullOrWhiteSpace(id) || 
+        string.Equals(id.Trim(), "claude-code", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(id.Trim(), "未設定", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>パッケージ名「claude-code」等を除外する。公式モデル ID はバージョン・日付で数字を含む。</summary>
     private static bool IsValidModelId(string? id) =>

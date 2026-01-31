@@ -23,6 +23,7 @@ public interface IClaudeCodeProcessHost
     /// <param name="thinking">Thinking モードを使うか（オプション）。</param>
     /// <param name="progress">進捗（任意）。</param>
     /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <param name="cwdOverride">ジョブの作業ディレクトリ（プロジェクトルート等）。null のときは RUNNER_CWD を使用。</param>
     /// <returns>成功と出力文字列。</returns>
     Task<(bool Success, string Output)> RunJobAsync(
         string roleLabel,
@@ -31,7 +32,8 @@ public interface IClaudeCodeProcessHost
         string? modelId = null,
         bool thinking = false,
         IProgress<string>? progress = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? cwdOverride = null);
 
     /// <summary>全常駐プロセスを終了する。アプリ終了時に呼ぶ。</summary>
     void StopAll();

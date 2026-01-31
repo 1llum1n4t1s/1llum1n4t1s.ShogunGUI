@@ -149,14 +149,17 @@ public class AgentWorkerService : IAgentWorkerService
                     continue;
                 }
                 var doneTcsList = new List<TaskCompletionSource<bool>>(assigned.Count);
+                var writeTasks = new List<Task>();
                 foreach (var n in assigned)
                 {
                     if (n < 1 || n > _ashigaruChannels.Count)
                         continue;
                     var doneTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                     doneTcsList.Add(doneTcs);
-                    await _ashigaruChannels[n - 1].Writer.WriteAsync(new AshigaruJob { AshigaruIndex = n, Progress = job.AshigaruProgressFor(n), DoneTcs = doneTcs }, ct).ConfigureAwait(false);
+                    var vt = _ashigaruChannels[n - 1].Writer.WriteAsync(new AshigaruJob { AshigaruIndex = n, Progress = job.AshigaruProgressFor(n), DoneTcs = doneTcs, ProjectId = job.ProjectId }, ct);
+                    writeTasks.Add(vt.AsTask());
                 }
+                await Task.WhenAll(writeTasks).ConfigureAwait(false);
                 await Task.WhenAll(doneTcsList.Select(t => t.Task)).ConfigureAwait(false);
 
                 var settings = _settingsService?.Get();
@@ -221,7 +224,7 @@ public class AgentWorkerService : IAgentWorkerService
         {
             try
             {
-                var ok = await _runService.RunAshigaruAsync(aj.AshigaruIndex, aj.Progress, ct).ConfigureAwait(false);
+                var ok = await _runService.RunAshigaruAsync(aj.AshigaruIndex, aj.Progress, ct, aj.ProjectId).ConfigureAwait(false);
                 aj.DoneTcs.TrySetResult(ok);
             }
             catch (Exception ex)
@@ -255,6 +258,7 @@ public class AgentWorkerService : IAgentWorkerService
         internal int AshigaruIndex { get; set; }
         internal IProgress<string> Progress { get; set; } = null!;
         internal TaskCompletionSource<bool> DoneTcs { get; set; } = null!;
+        internal string? ProjectId { get; set; }
     }
 
     /// <inheritdoc />

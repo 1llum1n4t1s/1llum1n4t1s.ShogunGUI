@@ -15,12 +15,13 @@ public interface IClaudeCodeRunService
     /// <returns>成功したら true。CLI 未インストール・起動失敗・終了コード非0 のときは false。</returns>
     Task<bool> RunKaroAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default);
 
-    /// <summary>足軽 N として Claude Code CLI を起動する。queue/tasks/ashigaru{N}.yaml の任務を実行し、queue/reports/ashigaru{N}_report.yaml に報告する。</summary>
+    /// <summary>足軽 N として Claude Code CLI を起動する。queue/tasks/ashigaru{N}.yaml の任務を実行し、queue/reports/ashigaru{N}_report.yaml に報告する。projectId が指定されていれば CWD をプロジェクトルートにする。</summary>
     /// <param name="ashigaruIndex">足軽番号（1～GetAshigaruCount()）。</param>
     /// <param name="progress">進捗メッセージ（任意）。</param>
     /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <param name="projectId">プロジェクトID。指定時は config/projects.yaml の当該 path を CWD（プロジェクトルート）に使用。</param>
     /// <returns>成功したら true。</returns>
-    Task<bool> RunAshigaruAsync(int ashigaruIndex, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
+    Task<bool> RunAshigaruAsync(int ashigaruIndex, IProgress<string>? progress = null, CancellationToken cancellationToken = default, string? projectId = null);
 
     /// <summary>家老として報告集約を実行する。queue/reports/ をスキャンし、dashboard.md の「戦果」を更新する。</summary>
     /// <param name="progress">進捗メッセージ（任意）。</param>

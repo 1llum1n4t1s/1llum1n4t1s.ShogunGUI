@@ -146,41 +146,41 @@
                             <TextBlock Text="DEBUG: エージェントタブ表示中" IsVisible="False"/>
                             
                             <!-- 将軍・家老 -->
-                            <Border Grid.Column="0" Grid.Row="0" BorderThickness="2" BorderBrush="{actipro:ThemeResource Container2BorderBrush}" Background="{actipro:ThemeResource Container1BackgroundBrush}" CornerRadius="4" Padding="8" Margin="0,0,2,0">
+                            <Border Grid.Column="0" Grid.Row="0" BorderThickness="1" BorderBrush="{actipro:ThemeResource Container2BorderBrush}" Background="{actipro:ThemeResource Container1BackgroundBrush}" CornerRadius="4" Padding="4" Margin="0,0,4,0">
                                 <Grid RowDefinitions="*,Auto,*">
                                     <ContentControl Grid.Row="0" Content="{Binding LeftPane0}" ContentTemplate="{StaticResource AgentPaneTemplate}"/>
-                                    <GridSplitter Grid.Row="1" Height="4" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="1" Height="4" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="2" Content="{Binding LeftPane1}" ContentTemplate="{StaticResource AgentPaneTemplate}"/>
                                 </Grid>
                             </Border>
                             <!-- 足軽 1-N/2 -->
-                            <Border Grid.Column="1" Grid.Row="0" BorderThickness="2" BorderBrush="{actipro:ThemeResource Container2BorderBrush}" Background="{actipro:ThemeResource Container1BackgroundBrush}" CornerRadius="4" Padding="8" Margin="2,0">
+                            <Border Grid.Column="1" Grid.Row="0" BorderThickness="1" BorderBrush="{actipro:ThemeResource Container2BorderBrush}" Background="{actipro:ThemeResource Container1BackgroundBrush}" CornerRadius="4" Padding="4" Margin="4,0">
                                 <Grid RowDefinitions="*,Auto,*,Auto,*,Auto,*">
                                     <ContentControl Grid.Row="0" Content="{Binding CenterPane0}" ContentTemplate="{StaticResource AgentPaneTemplate}" 
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource CenterPaneVisibilityConverter}, ConverterParameter=0}"/>
-                                    <GridSplitter Grid.Row="1" Height="2" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="1" Height="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="2" Content="{Binding CenterPane1}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource CenterPaneVisibilityConverter}, ConverterParameter=1}"/>
-                                    <GridSplitter Grid.Row="3" Height="2" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="3" Height="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="4" Content="{Binding CenterPane2}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource CenterPaneVisibilityConverter}, ConverterParameter=2}"/>
-                                    <GridSplitter Grid.Row="5" Height="2" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="5" Height="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="6" Content="{Binding CenterPane3}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource CenterPaneVisibilityConverter}, ConverterParameter=3}"/>
                                 </Grid>
                             </Border>
                             <!-- 足軽 N/2+1～N -->
-                            <Border Grid.Column="2" Grid.Row="0" BorderThickness="2" BorderBrush="{actipro:ThemeResource Container2BorderBrush}" Background="{actipro:ThemeResource Container1BackgroundBrush}" CornerRadius="4" Padding="8" Margin="2,0,0,0">
+                            <Border Grid.Column="2" Grid.Row="0" BorderThickness="1" BorderBrush="{actipro:ThemeResource Container2BorderBrush}" Background="{actipro:ThemeResource Container1BackgroundBrush}" CornerRadius="4" Padding="4" Margin="4,0,0,0">
                                 <Grid RowDefinitions="*,Auto,*,Auto,*,Auto,*">
                                     <ContentControl Grid.Row="0" Content="{Binding RightPane0}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource RightPaneVisibilityConverter}, ConverterParameter=0}"/>
-                                    <GridSplitter Grid.Row="1" Height="2" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="1" Height="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="2" Content="{Binding RightPane1}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource RightPaneVisibilityConverter}, ConverterParameter=1}"/>
-                                    <GridSplitter Grid.Row="3" Height="2" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="3" Height="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="4" Content="{Binding RightPane2}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource RightPaneVisibilityConverter}, ConverterParameter=2}"/>
-                                    <GridSplitter Grid.Row="5" Height="2" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
+                                    <GridSplitter Grid.Row="5" Height="2" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,2"/>
                                     <ContentControl Grid.Row="6" Content="{Binding RightPane3}" ContentTemplate="{StaticResource AgentPaneTemplate}"
                                                     IsVisible="{Binding TotalAshigaru, Converter={StaticResource RightPaneVisibilityConverter}, ConverterParameter=3}"/>
                                 </Grid>
@@ -199,63 +199,65 @@
                 </TabControl>
 
                 <!-- 下部：プロジェクト選択＋メッセージ入力エリア -->
-                <GridSplitter Grid.Row="1" Height="4" Background="{actipro:ThemeResource Container2BorderBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="0,-2,0,0"/>
-                        <Border Grid.Row="1"
-                                Padding="8"
-                                BorderThickness="0,1,0,0"
-                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}">
-                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*">
-                                <!-- プロジェクト選択 & 家老権限 -->
-                                <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0,0,0,8">
-                                    <TextBlock Grid.Column="0" Text="プロジェクト:" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" Margin="0,0,8,0"/>
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding Projects}"
-                                              SelectedItem="{Binding SelectedProject}"
-                                              MinWidth="300"
-                                              HorizontalAlignment="Left">
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding Name}"/>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
-                                    
-                                    <TextBlock Grid.Column="3" Text="家老の権限:" VerticalAlignment="Center" FontSize="12" Foreground="Gray" Margin="16,0,8,0"/>
-                                    <ComboBox Grid.Column="4" ItemsSource="{Binding KaroPermissionModeOptions}" 
-                                              SelectedItem="{Binding KaroExecutionPermissionMode}" 
-                                              MinWidth="140" 
-                                              FontSize="12"/>
-                                    <TextBlock Grid.Column="5" Text="※ AlwaysAllow: 自動実行 / AlwaysReject: 分析のみ / PromptUser: 確認" 
-                                               VerticalAlignment="Center" 
-                                               FontSize="11" 
-                                               Foreground="Gray" 
-                                               Opacity="0.7"
-                                               Margin="8,0,0,0"/>
-                                </Grid>
-                        <!-- テキスト入力＋送信ボタン -->
-                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" RowDefinitions="*">
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding ChatInput}"
-                                     Watermark="メッセージを入力（Shift+Enter で改行、Enter で送信）..."
-                                     IsEnabled="{Binding !IsAiProcessing}"
-                                     TextWrapping="Wrap"
-                                     AcceptsReturn="False"
-                                     MinHeight="90"
-                                     Padding="8,8"
-                                     KeyDown="OnChatInputKeyDown"
-                                     FontSize="13"/>
-                                    <Button Grid.Column="1"
-                                            Content="送信"
-                                            Click="OnSendButtonClick"
-                                            IsEnabled="{Binding !IsAiProcessing}"
-                                            Margin="8,0,0,0"
-                                            MinWidth="70"
-                                            VerticalAlignment="Bottom"
-                                            Padding="12,8"
-                                            FontSize="13"
-                                            FontWeight="SemiBold"/>
-                                </Grid>
+                <Grid Grid.Row="1" RowDefinitions="Auto,*">
+                    <GridSplitter Grid.Row="0" Height="4" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                    <Border Grid.Row="1"
+                            Padding="8"
+                            BorderThickness="0,1,0,0"
+                            BorderBrush="{actipro:ThemeResource Container2BorderBrush}">
+                        <Grid RowDefinitions="Auto,*" ColumnDefinitions="*">
+                            <!-- プロジェクト選択 & 家老権限 -->
+                            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0,0,0,8">
+                                <TextBlock Grid.Column="0" Text="プロジェクト:" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" Margin="0,0,8,0"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Projects}"
+                                          SelectedItem="{Binding SelectedProject}"
+                                          MinWidth="300"
+                                          HorizontalAlignment="Left">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                
+                                <TextBlock Grid.Column="3" Text="家老の権限:" VerticalAlignment="Center" FontSize="12" Foreground="Gray" Margin="16,0,8,0"/>
+                                <ComboBox Grid.Column="4" ItemsSource="{Binding KaroPermissionModeOptions}" 
+                                          SelectedItem="{Binding KaroExecutionPermissionMode}" 
+                                          MinWidth="140" 
+                                          FontSize="12"/>
+                                <TextBlock Grid.Column="5" Text="※ AlwaysAllow: 自動実行 / AlwaysReject: 分析のみ / PromptUser: 確認" 
+                                           VerticalAlignment="Center" 
+                                           FontSize="11" 
+                                           Foreground="Gray" 
+                                           Opacity="0.7"
+                                           Margin="8,0,0,0"/>
                             </Grid>
-                        </Border>
+                            <!-- テキスト入力＋送信ボタン -->
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding ChatInput}"
+                                         Watermark="メッセージを入力（Shift+Enter で改行、Enter で送信）..."
+                                         IsEnabled="{Binding !IsAiProcessing}"
+                                         TextWrapping="Wrap"
+                                         AcceptsReturn="True"
+                                         MinHeight="90"
+                                         Padding="8,8"
+                                         KeyDown="OnChatInputKeyDown"
+                                         FontSize="13"/>
+                                <Button Grid.Column="1"
+                                        Content="送信"
+                                        Click="OnSendButtonClick"
+                                        IsEnabled="{Binding !IsAiProcessing}"
+                                        Margin="8,0,0,0"
+                                        MinWidth="70"
+                                        VerticalAlignment="Stretch"
+                                        Padding="12,8"
+                                        FontSize="13"
+                                        FontWeight="SemiBold"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
             </Grid>
         </Grid>
 

@@ -34,17 +34,23 @@ public class ShogunQueueService : IShogunQueueService
     }
 
     /// <inheritdoc />
+    /// <remarks>queue/config の基準＝ドキュメントルート（config/settings.yaml の document_root）。その直下に config/, queue/ 等がある。アプリルート（node/Claude インストール・log4net のログ）とは別。</remarks>
     public string GetRepoRoot()
     {
         var s = _settingsService.Get();
+        var docRoot = s.DocumentRoot?.Trim();
+        if (!string.IsNullOrWhiteSpace(docRoot))
+        {
+            docRoot = Environment.ExpandEnvironmentVariables(docRoot);
+            if (!string.IsNullOrWhiteSpace(docRoot))
+                return docRoot.TrimEnd(Path.DirectorySeparatorChar, '/');
+        }
         if (!string.IsNullOrWhiteSpace(s.RepoRoot))
             return s.RepoRoot.TrimEnd(Path.DirectorySeparatorChar, '/');
-        
         var configDir = SettingsService.GetDefaultConfigDirectory();
         var parent = Path.GetDirectoryName(configDir);
         if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
             return parent.TrimEnd(Path.DirectorySeparatorChar, '/');
-        
         return AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, '/');
     }
 
@@ -287,5 +293,23 @@ public class ShogunQueueService : IShogunQueueService
             return root;
 
         return Path.Combine(root, project.Name);
+    }
+
+    /// <inheritdoc />
+    public string? GetProjectRoot(string? projectId)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+            return null;
+        var project = _projectService.GetProjects().FirstOrDefault(p => p.Id == projectId);
+        var path = project?.Path?.Trim();
+        if (string.IsNullOrEmpty(path))
+            return null;
+        return path.TrimEnd(Path.DirectorySeparatorChar, '/');
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> GetProjectIds()
+    {
+        return _projectService.GetProjects().Select(p => p.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
     }
 }

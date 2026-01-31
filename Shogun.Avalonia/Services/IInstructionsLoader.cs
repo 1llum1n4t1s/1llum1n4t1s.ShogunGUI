@@ -1,7 +1,7 @@
 namespace Shogun.Avalonia.Services;
 
 /// <summary>
-/// フォーク元の instructions/*.md と memory/global_context.md をワークスペースルートから読み込むサービス。
+/// フォーク元の instructions/*.md と memory/global_context.md を queue/config の基準から読み込むサービス。
 /// </summary>
 public interface IInstructionsLoader
 {

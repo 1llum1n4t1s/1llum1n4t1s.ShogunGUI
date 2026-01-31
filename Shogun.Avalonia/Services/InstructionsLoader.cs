@@ -3,7 +3,7 @@ using System.IO;
 namespace Shogun.Avalonia.Services;
 
 /// <summary>
-/// フォーク元の instructions/*.md をワークスペースルートから読み込むサービス。
+/// フォーク元の instructions/*.md を queue/config の基準から読み込むサービス。
 /// </summary>
 public class InstructionsLoader : IInstructionsLoader
 {

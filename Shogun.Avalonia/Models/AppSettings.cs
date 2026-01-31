@@ -54,7 +54,7 @@ public partial class AppSettings
     /// <summary>API エンドポイント（Claude では未使用。将来用に保持）。config にはなし。</summary>
     public string ApiEndpoint { get; set; } = string.Empty;
 
-    /// <summary>ワークスペースルート（queue/dashboard/instructions の親フォルダ）。空のときは config の親を使用。</summary>
+    /// <summary>queue/config の基準の旧設定（非推奨）。通常は document_root（ドキュメントルート）を基準とする。空のときは GetRepoRoot が document_root または config の親を使用。※アプリルートは node/Claude インストール・log4net のログのみに使用。</summary>
     public string RepoRoot { get; set; } = string.Empty;
 
     /// <summary>ドキュメント出力先ルート（報告書等の作成先）。</summary>

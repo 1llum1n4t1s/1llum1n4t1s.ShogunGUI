@@ -32,14 +32,15 @@ tasks:
     
     private const string KaroExecutionPrompt = @"足軽からの報告書をすべて読んだ。確認せよ: queue/reports/ashigaru*_report.yaml
 
-重要: あなたの現在の作業ディレクトリ（CWD）はプロジェクトのルートディレクトリである。
-queue/reports/ は、カレントディレクトリからの相対パスでアクセスせよ。
+重要: あなたの現在の作業ディレクトリ（CWD）は queue/config の基準（ドキュメントルート）である。
+queue/reports/ は CWD からの相対パスで読める。プロジェクトの実体パスは config/projects.yaml の path に記載されている。
+足軽の報告内のファイルパスは各プロジェクトルートからの相対パスのことがある。config/projects.yaml で project_id に対応する path を確認し、その path を基準に絶対パスで Edit ツールを実行せよ。
 
 報告内容をまとめ、必要に応じて自分でコードを改修せよ。
 1. 報告ファイルをすべて読む
-2. 改修が必要なファイルを特定する
-3. 必要に応じてファイルを Edit ツールで改修する
-4. ビルドが成功することを確認する
+2. 改修が必要なファイルを特定する（絶対パスは config/projects.yaml の path から組み立てる）
+3. 必要に応じてファイルを Edit ツールで絶対パス指定で改修する
+4. ビルドが成功することを確認する（プロジェクトルートでビルドコマンドを実行）
 5. 最終的なサマリーを出力する
 
 改修内容を含めた最終報告を、以下のYAML形式で出力せよ:
@@ -54,8 +55,9 @@ summary: ""処理サマリー""
     
     private const string KaroReportUserPrompt = @"queue/reports/ の報告を確認し、dashboard.md の「戦果」を更新せよ。
 
-重要: あなたの現在の作業ディレクトリ（CWD）はプロジェクトのルートディレクトリである。
-queue/reports/ および dashboard.md は、カレントディレクトリからの相対パスでアクセスせよ。";
+重要: あなたの現在の作業ディレクトリ（CWD）は queue/config の基準（ドキュメントルート）である。
+queue/reports/ および dashboard.md は、CWD からの相対パスでアクセスせよ。
+もし queue/reports/ 配下に報告ファイル（ashigaru*_report.yaml）が一つも存在しない場合は、その旨を dashboard.md に記載せよ。";
 
     private readonly IClaudeCodeProcessHost _processHost;
     private readonly IClaudeCodeSetupService _setupService;
@@ -93,7 +95,7 @@ queue/reports/ および dashboard.md は、カレントディレクトリから
     }
 
     /// <inheritdoc />
-    public async Task<bool> RunAshigaruAsync(int ashigaruIndex, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+    public async Task<bool> RunAshigaruAsync(int ashigaruIndex, IProgress<string>? progress = null, CancellationToken cancellationToken = default, string? projectId = null)
     {
         var max = _queueService.GetAshigaruCount();
         if (ashigaruIndex < 1 || ashigaruIndex > max)
@@ -101,13 +103,105 @@ queue/reports/ および dashboard.md は、カレントディレクトリから
             progress?.Report($"足軽番号は 1～{max} の範囲で指定してください。");
             return false;
         }
+        var repoRoot = _queueService.GetRepoRoot();
+        if (!string.IsNullOrEmpty(repoRoot))
+        {
+            var reportsDir = Path.Combine(repoRoot, "queue", "reports");
+            try { Directory.CreateDirectory(reportsDir); } catch { /* 作成失敗時は続行 */ }
+        }
+        var reportPath = string.IsNullOrEmpty(repoRoot) ? $"queue/reports/ashigaru{ashigaruIndex}_report.yaml" : Path.Combine(repoRoot, "queue", "reports", $"ashigaru{ashigaruIndex}_report.yaml");
+        var reportPathForPrompt = reportPath.Replace('\\', '/');
         var ashigaruInstructions = _instructionsLoader.LoadAshigaruInstructions() ?? string.Empty;
-        var userPrompt = $@"queue/tasks/ashigaru{ashigaruIndex}.yaml に任務がある。確認して実行せよ。
+        var taskContent = _queueService.ReadTaskYaml(ashigaruIndex);
+        var effectiveProjectId = TryInferProjectIdFromTaskContent(taskContent) ?? projectId;
+        var projectRoot = _queueService.GetProjectRoot(effectiveProjectId);
+        string userPrompt;
+        string? cwdOverride = null;
+        if (!string.IsNullOrEmpty(projectRoot) && Directory.Exists(projectRoot) && !string.IsNullOrWhiteSpace(taskContent))
+        {
+            var contentForCwd = RewriteTaskTargetPathForProjectRoot(taskContent, effectiveProjectId, projectRoot);
+            userPrompt = $@"以下の任務（YAML）を実行せよ。作業ディレクトリ（CWD）はプロジェクトルートに設定されている。
 
-重要: あなたの現在の作業ディレクトリ（CWD）はプロジェクトのルートディレクトリである。
-queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリからの相対パスでアクセスせよ。";
-        var result = await RunClaudeAsync(userPrompt, ashigaruInstructions, progress, $"足軽{ashigaruIndex}", cancellationToken).ConfigureAwait(false);
+```yaml
+{contentForCwd}
+```
+
+重要: あなたの現在の作業ディレクトリ（CWD）はプロジェクトルートである。ファイルの読み書き・編集はすべてこのディレクトリ配下で行うこと。target_path は CWD からの相対パスである。
+
+報告: 任務完了時、報告を必ず次の絶対パスに YAML で書き込むこと: {reportPathForPrompt} （CWD がプロジェクトルートでも、報告ファイルは常にこのドキュメントルート基準のパスに書くこと。ファイルが存在しない場合は新規作成せよ。）
+
+補足: 実装・最適化タスクで前提となる施策ドキュメント等がまだ存在しない場合は、自己分析で方針を立てて進めてよい。";
+            cwdOverride = projectRoot;
+        }
+        else
+        {
+            userPrompt = $@"queue/tasks/ashigaru{ashigaruIndex}.yaml に任務がある。確認して実行せよ。
+
+重要: あなたの現在の作業ディレクトリ（CWD）は queue/config の基準パスである。
+queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリからの相対パスでアクセスせよ。
+
+報告: 任務完了時、報告を必ず次のパスに YAML で書き込むこと: {reportPathForPrompt} （絶対パスの場合はそのまま、相対の場合は CWD 基準。ファイルが存在しない場合は新規作成せよ。）
+
+補足: 実装・最適化タスクで前提となる施策ドキュメント等がまだ存在しない場合は、自己分析で方針を立てて進めてよい。";
+        }
+        var result = await RunClaudeAsync(userPrompt, ashigaruInstructions, progress, $"足軽{ashigaruIndex}", cancellationToken, cwdOverride).ConfigureAwait(false);
         return result.Success;
+    }
+
+    /// <summary>タスク YAML から target_path や description に含まれるプロジェクト ID を推定する。家老が足軽ごとに別プロジェクトを割り当てている場合に使用。</summary>
+    private string? TryInferProjectIdFromTaskContent(string? taskContent)
+    {
+        if (string.IsNullOrWhiteSpace(taskContent))
+            return null;
+        var knownIds = _queueService.GetProjectIds();
+        foreach (var id in knownIds)
+        {
+            if (string.IsNullOrWhiteSpace(id)) continue;
+            if (taskContent.Contains("projects/" + id + "/", StringComparison.Ordinal) || taskContent.Contains("projects/" + id + "\r", StringComparison.Ordinal) || taskContent.Contains("projects/" + id + "\n", StringComparison.Ordinal))
+                return id;
+            if (taskContent.Contains("target_path:" + " " + id + "\r", StringComparison.Ordinal) || taskContent.Contains("target_path:" + " " + id + "\n", StringComparison.Ordinal))
+                return id;
+            if (taskContent.Contains("target_path: " + id + "\r", StringComparison.Ordinal) || taskContent.Contains("target_path: " + id + "\n", StringComparison.Ordinal))
+                return id;
+            if (taskContent.Contains("project " + id, StringComparison.Ordinal) || taskContent.Contains("プロジェクト " + id, StringComparison.Ordinal))
+                return id;
+        }
+        return null;
+    }
+
+    /// <summary>CWD がプロジェクトルートのとき、タスク YAML 内の target_path をプロジェクトルート相対に書き換える。</summary>
+    private static string RewriteTaskTargetPathForProjectRoot(string taskContent, string? projectId, string? projectRoot)
+    {
+        var targetPathLabel = "target_path:";
+        var c = taskContent;
+        if (!string.IsNullOrWhiteSpace(projectId))
+        {
+            var prefixWithSlash = "projects/" + projectId + "/";
+            var prefixOnly = "projects/" + projectId;
+            c = c.Replace(targetPathLabel + " " + prefixWithSlash, targetPathLabel + " ");
+            c = c.Replace(targetPathLabel + " " + prefixOnly + "\r\n", targetPathLabel + " .\r\n");
+            c = c.Replace(targetPathLabel + " " + prefixOnly + "\r", targetPathLabel + " .\r");
+            c = c.Replace(targetPathLabel + " " + prefixOnly + "\n", targetPathLabel + " .\n");
+            c = c.Replace(targetPathLabel + " " + prefixOnly + "\"", targetPathLabel + " \".\"");
+            if (c.Contains(targetPathLabel + " " + prefixOnly))
+                c = c.Replace(targetPathLabel + " " + prefixOnly, targetPathLabel + " .");
+            c = c.Replace(targetPathLabel + " " + projectId + "\r\n", targetPathLabel + " .\r\n");
+            c = c.Replace(targetPathLabel + " " + projectId + "\r", targetPathLabel + " .\r");
+            c = c.Replace(targetPathLabel + " " + projectId + "\n", targetPathLabel + " .\n");
+            if (c.Contains(targetPathLabel + " " + projectId))
+                c = c.Replace(targetPathLabel + " " + projectId, targetPathLabel + " .");
+        }
+        if (!string.IsNullOrWhiteSpace(projectRoot))
+        {
+            var normRoot = projectRoot.TrimEnd(Path.DirectorySeparatorChar, '/').Replace('/', Path.DirectorySeparatorChar);
+            c = c.Replace(targetPathLabel + " " + normRoot + "\r\n", targetPathLabel + " .\r\n");
+            c = c.Replace(targetPathLabel + " " + normRoot + "\r", targetPathLabel + " .\r");
+            c = c.Replace(targetPathLabel + " " + normRoot + "\n", targetPathLabel + " .\n");
+            c = c.Replace(targetPathLabel + " \"" + normRoot + "\"\r\n", targetPathLabel + " \".\"\r\n");
+            c = c.Replace(targetPathLabel + " \"" + normRoot + "\"\r", targetPathLabel + " \".\"\r");
+            c = c.Replace(targetPathLabel + " \"" + normRoot + "\"\n", targetPathLabel + " \".\"\n");
+        }
+        return c;
     }
 
     /// <inheritdoc />
@@ -133,12 +227,13 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
     }
 
     /// <summary>常駐プロセスにジョブを送り、結果を返す。プロセスは終了しない。</summary>
-    private async Task<(bool Success, string Output)> RunClaudeAsync(string userPrompt, string systemPromptContent, IProgress<string>? progress, string roleLabel, CancellationToken cancellationToken)
+    /// <param name="cwdOverride">ジョブの作業ディレクトリ（プロジェクトルート等）。null のときは RUNNER_CWD（queue/config の基準）を使用。</param>
+    private async Task<(bool Success, string Output)> RunClaudeAsync(string userPrompt, string systemPromptContent, IProgress<string>? progress, string roleLabel, CancellationToken cancellationToken, string? cwdOverride = null)
     {
         var repoRoot = _queueService.GetRepoRoot();
         if (string.IsNullOrEmpty(repoRoot) || !Directory.Exists(repoRoot))
         {
-            progress?.Report("ワークスペースルートが設定されていません。設定で指定してください。");
+            progress?.Report("queue/config の基準（ドキュメントルート）が無効です。設定の document_root を確認してください。");
             return (false, string.Empty);
         }
 
@@ -170,7 +265,8 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
             promptFile = Path.Combine(Path.GetTempPath(), "shogun-prompt-" + Guid.NewGuid().ToString("N")[..8] + ".md");
             await File.WriteAllTextAsync(promptFile, systemPromptContent, cancellationToken).ConfigureAwait(false);
             Logger.Log($"システムプロンプトファイルを生成しました: {promptFile}", LogLevel.Debug);
-            var (success, outputStr) = await _processHost.RunJobAsync(roleLabel, userPrompt, promptFile, modelId, thinking, progress, cancellationToken).ConfigureAwait(false);
+            var processKey = GetProcessKeyForRole(roleLabel);
+            var (success, outputStr) = await _processHost.RunJobAsync(processKey, userPrompt, promptFile, modelId, thinking, progress, cancellationToken, cwdOverride).ConfigureAwait(false);
             Logger.Log($"{roleLabel} のジョブが完了しました。Success={success}", LogLevel.Info);
             if (!success)
                 progress?.Report($"{roleLabel}の実行が失敗しました。");
@@ -190,6 +286,14 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
                 try { File.Delete(promptFile); } catch { /* ignore */ }
             }
         }
+    }
+
+    /// <summary>ロール表示名に対応する常駐プロセスキーを返す。家老の3フェーズは同一プロセス「家老」を使用する。</summary>
+    private static string GetProcessKeyForRole(string roleLabel)
+    {
+        if (roleLabel == "家老（実行フェーズ）" || roleLabel == "家老（報告集約）")
+            return "家老";
+        return roleLabel;
     }
 
     /// <summary>家老の YAML 出力から足軽タスクを生成する。</summary>

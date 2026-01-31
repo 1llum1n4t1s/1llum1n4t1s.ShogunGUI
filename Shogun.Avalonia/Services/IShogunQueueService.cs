@@ -9,7 +9,7 @@ namespace Shogun.Avalonia.Services;
 /// </summary>
 public interface IShogunQueueService
 {
-    /// <summary>ワークスペースルート（queue/dashboard/instructions の親フォルダ）。空のときは config の親を使用。</summary>
+    /// <summary>queue/config の基準＝ドキュメントルート（config/settings.yaml の document_root）。その直下に config/, queue/ がある。※アプリルートは node/Claude インストール・log4net のログのみに使用。</summary>
     string GetRepoRoot();
 
     /// <summary>足軽の人数（1～20）。設定に従う。</summary>
@@ -59,4 +59,11 @@ public interface IShogunQueueService
     /// <summary>現在のプロジェクトに基づいたドキュメント出力先パスを取得する。</summary>
     /// <param name="projectId">プロジェクト ID（任意）。</param>
     string GetDocumentOutputPath(string? projectId = null);
+
+    /// <summary>プロジェクトルート（config/projects.yaml の当該プロジェクトの path）を取得する。</summary>
+    /// <param name="projectId">プロジェクト ID。null または未登録のときは null を返す。</param>
+    string? GetProjectRoot(string? projectId);
+
+    /// <summary>config/projects.yaml に登録されているプロジェクト ID の一覧を取得する。</summary>
+    IReadOnlyList<string> GetProjectIds();
 }
