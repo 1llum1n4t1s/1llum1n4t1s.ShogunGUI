@@ -45,6 +45,9 @@ public class AppSettings
     /// <summary>足軽用モデルで Thinking を使うか。</summary>
     public bool ThinkingAshigaru { get; set; }
 
+    /// <summary>家老のコード改修権限モード。AlwaysAllow / AlwaysReject / PromptUser。</summary>
+    public string KaroExecutionPermissionMode { get; set; } = "PromptUser";
+
     /// <summary>API エンドポイント（Claude では未使用。将来用に保持）。config にはなし。</summary>
     public string ApiEndpoint { get; set; } = string.Empty;
 

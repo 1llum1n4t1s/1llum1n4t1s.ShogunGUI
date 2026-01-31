@@ -29,6 +29,9 @@ public partial class SettingsViewModel : ObservableObject
     /// <summary>足軽人数の選択肢（1～20）。XAML バインディング用。</summary>
     public IReadOnlyList<int> AshigaruCountOptions { get; } = Enumerable.Range(1, 20).ToList();
 
+    /// <summary>家老権限モードの選択肢。XAML バインディング用。</summary>
+    public IReadOnlyList<string> KaroPermissionModeOptions { get; } = new[] { "AlwaysAllow", "AlwaysReject", "PromptUser" };
+
     /// <summary>モデル選択肢の全件（models.dev から取得。取得前は空）。</summary>
     public ObservableCollection<ModelOption> AllModelOptions { get; } = new();
 
@@ -84,6 +87,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _thinkingAshigaru;
 
+    /// <summary>家老のコード改修権限モード（AlwaysAllow / AlwaysReject / PromptUser）。</summary>
+    [ObservableProperty]
+    private string _karoExecutionPermissionMode = "PromptUser";
+
     /// <summary>ViewModel を生成する。</summary>
     /// <param name="settingsService">設定サービス。</param>
     /// <param name="claudeModelsService">models.dev でモデル一覧を取得するサービス。null のときは新規作成。</param>
@@ -113,6 +120,7 @@ public partial class SettingsViewModel : ObservableObject
         ThinkingShogun = s.ThinkingShogun;
         ThinkingKaro = s.ThinkingKaro;
         ThinkingAshigaru = s.ThinkingAshigaru;
+        KaroExecutionPermissionMode = s.KaroExecutionPermissionMode;
     }
 
     /// <summary>保存済み ID（ModelShogun/Karo/Ashigaru）から SelectedModel* を同期する。AllModelOptions 設定後に呼ぶ。</summary>
@@ -247,7 +255,8 @@ public partial class SettingsViewModel : ObservableObject
             ThinkingKaro = ThinkingKaro,
             ThinkingAshigaru = ThinkingAshigaru,
             ApiEndpoint = current.ApiEndpoint,
-            RepoRoot = current.RepoRoot
+            RepoRoot = current.RepoRoot,
+            KaroExecutionPermissionMode = KaroExecutionPermissionMode
         });
         _onClose?.Invoke();
     }

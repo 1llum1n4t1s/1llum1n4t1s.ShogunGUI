@@ -85,6 +85,16 @@
                     </StackPanel>
                 </StackPanel>
 
+                <!-- 家老の権限設定（新規） -->
+                <TextBlock Text="家老の権限設定" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="コード改修の確認モード"/>
+                    <ComboBox ItemsSource="{Binding KaroPermissionModeOptions}" SelectedItem="{Binding KaroExecutionPermissionMode}" MinWidth="200" HorizontalAlignment="Left"/>
+                    <TextBlock Text="• 常に許可: 家老がコード改修を自動実行（開発用）
+• 常に却下: 家老は分析のみ実行（安全）
+• ユーザー確認: 各改修時に許可/却下を確認（推奨）" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+
                 <!-- Claude Code ログイン状態 -->
                 <TextBlock Text="Claude Code 認証" FontWeight="SemiBold" Margin="0,8,0,0"/>
                 <StackPanel Spacing="8">
