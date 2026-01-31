@@ -11,6 +11,10 @@ public class AshigaruReportJson
     [JsonPropertyName("task_id")]
     public string? TaskId { get; set; }
 
+    /// <summary>発令日時（ISO8601）。</summary>
+    [JsonPropertyName("timestamp")]
+    public string? Timestamp { get; set; }
+
     /// <summary>状態（done 等）。</summary>
     [JsonPropertyName("status")]
     public string? Status { get; set; }

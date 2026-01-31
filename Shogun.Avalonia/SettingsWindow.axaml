@@ -3,13 +3,17 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Shogun.Avalonia.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="400"
+        xmlns:util="clr-namespace:Shogun.Avalonia.Util"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="450"
         x:Class="Shogun.Avalonia.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="設定 - Shogun.Avalonia"
-        Width="520" Height="400"
+        Width="520" Height="450"
         WindowStartupLocation="CenterScreen"
         CanResize="False">
+    <Window.Resources>
+        <util:BoolToColorConverter x:Key="LoginColorConverter" TrueColor="Green" FalseColor="Red"/>
+    </Window.Resources>
     <Grid RowDefinitions="Auto,*" Margin="16">
         <TextBlock Grid.Row="0" Text="設定" FontSize="20" FontWeight="Bold" Margin="0,0,0,16"/>
 
@@ -80,6 +84,22 @@
                         <CheckBox Content="(Thinking)" IsChecked="{Binding ThinkingAshigaru}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
+
+                <!-- Claude Code ログイン状態 -->
+                <TextBlock Text="Claude Code 認証" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding LoginStatusMessage}" VerticalAlignment="Center" 
+                                   Foreground="{Binding IsClaudeLoggedIn, Converter={StaticResource LoginColorConverter}}"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Button Content="再確認" Command="{Binding CheckLoginStatusCommand}" IsEnabled="{Binding !IsCheckingLogin}"/>
+                            <Button Content="ログイン実行" Command="{Binding LoginClaudeCommand}" IsEnabled="{Binding !IsCheckingLogin}"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="※ 「ログイン実行」を押すと別ウィンドウが開きます。認証方法で「Claude Pro/Max アカウント」を選択し、ブラウザで承認してください。" 
+                               FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+
                 <Border Height="24"/>
                 <!-- ボタン -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">

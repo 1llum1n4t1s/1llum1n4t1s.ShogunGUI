@@ -47,7 +47,7 @@ public partial class MainWindow : Window
             w.Close();
             if (DataContext is MainWindowViewModel m)
                 m.RefreshAiService();
-        });
+        }, mainVm?.ClaudeCodeSetupService);
         vm.SetInitialModels(mainVm?.LastFetchedModels);
         w.DataContext = vm;
         await w.ShowDialog(this);

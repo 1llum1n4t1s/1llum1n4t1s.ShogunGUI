@@ -20,6 +20,7 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly ISettingsService _settingsService;
     private readonly IClaudeModelsService _claudeModelsService;
+    private readonly IClaudeCodeSetupService _claudeCodeSetupService;
     private readonly Action? _onClose;
 
     /// <summary>ログレベルの選択肢（logging.level）。XAML バインディング用。</summary>
@@ -87,12 +88,14 @@ public partial class SettingsViewModel : ObservableObject
     /// <param name="settingsService">設定サービス。</param>
     /// <param name="claudeModelsService">models.dev でモデル一覧を取得するサービス。null のときは新規作成。</param>
     /// <param name="onClose">ウィンドウを閉じる際のコールバック。</param>
-    public SettingsViewModel(ISettingsService settingsService, IClaudeModelsService? claudeModelsService = null, Action? onClose = null)
+    public SettingsViewModel(ISettingsService settingsService, IClaudeModelsService? claudeModelsService = null, Action? onClose = null, IClaudeCodeSetupService? claudeCodeSetupService = null)
     {
         _settingsService = settingsService;
         _claudeModelsService = claudeModelsService ?? new ClaudeCodeModelsService();
+        _claudeCodeSetupService = claudeCodeSetupService ?? new ClaudeCodeSetupService();
         _onClose = onClose;
         LoadFromService();
+        _ = CheckLoginStatusAsync();
     }
 
     /// <summary>設定サービスから現在の設定を読み込む。パスは環境変数を展開して表示する。モデルは保存値のまま（空のときは空）。</summary>
@@ -170,9 +173,56 @@ public partial class SettingsViewModel : ObservableObject
         return Environment.ExpandEnvironmentVariables(path);
     }
 
+    /// <summary>Claude Code CLI のログイン状態を確認する。</summary>
+    [ObservableProperty]
+    private bool _isClaudeLoggedIn = false;
+
+    /// <summary>ログイン確認中か。</summary>
+    [ObservableProperty]
+    private bool _isCheckingLogin = false;
+
+    /// <summary>ログイン状態のメッセージ。</summary>
+    [ObservableProperty]
+    private string _loginStatusMessage = "ログイン状態を確認中...";
+
+    /// <summary>Claude Code CLI にログインする。</summary>
+    public async Task LoginClaudeAsync()
+    {
+        var progress = new Progress<string>(msg => LoginStatusMessage = msg);
+        await _claudeCodeSetupService.RunLoginAsync(progress).ConfigureAwait(true);
+        await CheckLoginStatusAsync();
+    }
+
+    /// <summary>ログイン状態を再確認する。</summary>
+    public async Task CheckLoginStatusAsync()
+    {
+        if (IsCheckingLogin) return;
+        IsCheckingLogin = true;
+        LoginStatusMessage = "ログイン状態を確認中...";
+        try
+        {
+            IsClaudeLoggedIn = await _claudeCodeSetupService.IsLoggedInAsync().ConfigureAwait(true);
+            LoginStatusMessage = IsClaudeLoggedIn ? "ログイン済み" : "未ログイン (ログインが必要です)";
+        }
+        catch (Exception ex)
+        {
+            LoginStatusMessage = $"確認エラー: {ex.Message}";
+        }
+        finally
+        {
+            IsCheckingLogin = false;
+        }
+    }
+
+    /// <summary>Claude Code CLI にログインするコマンド。</summary>
+    public IAsyncRelayCommand LoginClaudeCommand => new AsyncRelayCommand(LoginClaudeAsync);
+
+    /// <summary>ログイン状態を再確認するコマンド。</summary>
+    public IAsyncRelayCommand CheckLoginStatusCommand => new AsyncRelayCommand(CheckLoginStatusAsync);
+
     /// <summary>保存してウィンドウを閉じる。</summary>
     [RelayCommand]
-    private void SaveAndClose()
+    public void SaveAndClose()
     {
         var current = _settingsService.Get();
         var count = AshigaruCount;

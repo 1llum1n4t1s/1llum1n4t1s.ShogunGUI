@@ -29,6 +29,9 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>設定画面でモデル一覧取得に使うサービス（Claude Code CLI 経由。API キーは使わない）。</summary>
     internal IClaudeModelsService ClaudeModelsService => _claudeModelsService;
 
+    /// <summary>環境セットアップサービス（設定画面に渡す用）。</summary>
+    internal IClaudeCodeSetupService ClaudeCodeSetupService => _claudeCodeSetupService;
+
     /// <summary>起動時に最後に取得したモデル一覧（ID と表示名）。設定画面のドロップダウン初期表示に渡す。</summary>
     internal IReadOnlyList<(string Id, string Name)>? LastFetchedModels { get; private set; }
 
@@ -379,10 +382,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         try
         {
+            Logger.Log($"SendMessageAsync 開始: Input='{inputCopy}', ProjectId='{projectId}'", LogLevel.Info);
             string resultMessage;
             if (_aiService.IsAvailable)
             {
+                Logger.Log("AIサービスが利用可能です。将軍による指示解決を開始します。", LogLevel.Debug);
                 var commandForKaro = await _orchestrator.ResolveShogunCommandAsync(inputCopy, string.IsNullOrEmpty(projectId) ? null : projectId);
+                Logger.Log($"将軍が指示を解決しました: {commandForKaro}", LogLevel.Debug);
                 var id = _queueService.AppendCommand(commandForKaro, string.IsNullOrEmpty(projectId) ? null : projectId, "medium");
                 resultMessage = $"将軍が指示文を生成し、キューに追加しました（{id}）。家老・足軽を実行中…";
                 var progressMessage = new ChatMessage
@@ -395,28 +401,40 @@ public partial class MainWindowViewModel : ObservableObject
                 ChatMessages.Add(progressMessage);
                 if (AgentPanes.Count > 0)
                     AgentPanes[0].Blocks.Add(new PaneBlock { Content = resultMessage, Timestamp = DateTime.Now });
+                
+                Logger.Log($"オーケストレーターの実行を開始します (CommandId: {id})", LogLevel.Info);
                 var runResult = await _orchestrator.RunAsync(id);
                 resultMessage = runResult;
+                Logger.Log($"オーケストレーターの実行が完了しました: {resultMessage}", LogLevel.Info);
             }
             else
             {
+                Logger.Log("AIサービスが利用不可です。直接キューに追加し、Claude Code CLI を起動します。", LogLevel.Info);
                 var id = _queueService.AppendCommand(inputCopy, string.IsNullOrEmpty(projectId) ? null : projectId, "medium");
+                Logger.Log($"コマンドをキューに追加しました: {id}", LogLevel.Debug);
+                
                 if (_claudeCodeSetupService.IsClaudeCodeInstalled())
                 {
+                    Logger.Log("Claude Code CLI がインストールされています。実行を開始します。", LogLevel.Debug);
                     var progress = new Progress<string>(msg =>
                     {
+                        Logger.Log($"[ClaudeCodeProgress] {msg}", LogLevel.Info);
                         var m = new ChatMessage { Sender = "system", Content = msg, ProjectId = projectId, Timestamp = DateTime.Now };
                         ChatMessages.Add(m);
                         if (AgentPanes.Count > 0)
                             AgentPanes[0].Blocks.Add(new PaneBlock { Content = msg, Timestamp = DateTime.Now });
                     });
+                    
+                    Logger.Log("家老 (RunKaroAsync) を起動します。", LogLevel.Info);
                     var karoOk = await _claudeCodeRunService.RunKaroAsync(progress).ConfigureAwait(true);
                     if (!karoOk)
                     {
                         resultMessage = $"指示をキューに追加しました（{id}）。家老の実行に失敗しました。ダッシュボードで確認してください。";
+                        Logger.Log("家老の実行に失敗しました。", LogLevel.Error);
                     }
                     else
                     {
+                        Logger.Log("家老の実行に成功しました。足軽のタスクを確認します。", LogLevel.Debug);
                         var ashigaruCount = _queueService.GetAshigaruCount();
                         var assigned = new List<int>();
                         for (var i = 1; i <= ashigaruCount; i++)
@@ -425,24 +443,31 @@ public partial class MainWindowViewModel : ObservableObject
                             if (!string.IsNullOrWhiteSpace(taskContent) && (taskContent.Contains("task:", StringComparison.Ordinal) || taskContent.Contains("status:", StringComparison.Ordinal)))
                                 assigned.Add(i);
                         }
+                        
                         if (assigned.Count > 0)
                         {
+                            Logger.Log($"足軽 {string.Join(", ", assigned)} にタスクが割り当てられています。並列実行を開始します。", LogLevel.Info);
                             var ashigaruTasks = assigned.Select(n => _claudeCodeRunService.RunAshigaruAsync(n, progress)).ToArray();
                             await Task.WhenAll(ashigaruTasks).ConfigureAwait(true);
+                            
+                            Logger.Log("全足軽の実行が完了しました。報告集約を開始します。", LogLevel.Info);
                             var reportOk = await _claudeCodeRunService.RunKaroReportAggregationAsync(progress).ConfigureAwait(true);
                             resultMessage = reportOk
                                 ? $"指示をキューに追加しました（{id}）。家老・足軽{assigned.Count}名・家老（報告集約）の実行が完了しました。"
                                 : $"指示をキューに追加しました（{id}）。家老・足軽の実行は完了しましたが、家老（報告集約）に失敗しました。ダッシュボードで確認してください。";
+                            Logger.Log($"報告集約結果: {reportOk}", LogLevel.Info);
                         }
                         else
                         {
                             resultMessage = $"指示をキューに追加しました（{id}）。家老（Claude Code）の実行が完了しました。（割り当てられた足軽なし）";
+                            Logger.Log("割り当てられた足軽はありませんでした。", LogLevel.Info);
                         }
                     }
                 }
                 else
                 {
                     resultMessage = $"指示をキューに追加しました（{id}）。Claude Code CLI が未インストールのため家老は実行されません。設定でインストールしてください。";
+                    Logger.Log("Claude Code CLI が未インストールです。", LogLevel.Warning);
                 }
             }
             var sysMessage = new ChatMessage

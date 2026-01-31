@@ -37,6 +37,13 @@ public class InstructionsLoader : IInstructionsLoader
     }
 
     /// <inheritdoc />
+    public string? LoadClaudeMd()
+    {
+        var path = Path.Combine(_queueService.GetRepoRoot(), "CLAUDE.md");
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
+    /// <inheritdoc />
     public string? LoadGlobalContext()
     {
         var path = Path.Combine(_queueService.GetRepoRoot(), "memory", "global_context.md");

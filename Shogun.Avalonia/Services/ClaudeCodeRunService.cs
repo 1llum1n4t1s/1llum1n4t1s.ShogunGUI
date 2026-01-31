@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Shogun.Avalonia.Util;
 
 namespace Shogun.Avalonia.Services;
 
@@ -73,9 +74,15 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
         try
         {
             progress?.Report($"{roleLabel}（Claude Code）を起動中…");
+            Logger.Log($"{roleLabel} の実行を開始します。UserPrompt='{userPrompt}'", LogLevel.Info);
             promptFile = Path.Combine(Path.GetTempPath(), "shogun-prompt-" + Guid.NewGuid().ToString("N")[..8] + ".md");
             await File.WriteAllTextAsync(promptFile, systemPromptContent, cancellationToken).ConfigureAwait(false);
+            Logger.Log($"システムプロンプトファイルを生成しました: {promptFile}", LogLevel.Debug);
+            
             var args = $"-p \"{userPrompt.Replace("\"", "\\\"")}\" --system-prompt-file \"{promptFile}\"";
+            Logger.Log($"実行コマンド: {claudePath} {args}", LogLevel.Debug);
+            Logger.Log($"作業ディレクトリ: {repoRoot}", LogLevel.Debug);
+
             using var proc = new Process();
             proc.StartInfo.FileName = claudePath;
             proc.StartInfo.Arguments = args;
@@ -84,11 +91,25 @@ public class ClaudeCodeRunService : IClaudeCodeRunService
             proc.StartInfo.CreateNoWindow = true;
             proc.StartInfo.RedirectStandardOutput = true;
             proc.StartInfo.RedirectStandardError = true;
+            
+            Logger.Log($"{roleLabel} プロセスを起動します...", LogLevel.Info);
             proc.Start();
+            
+            // 出力を非同期で読み取る（ハング対策）
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = proc.StandardError.ReadToEndAsync(cancellationToken);
+
             await proc.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            var stdout = await stdoutTask.ConfigureAwait(false);
+            var stderr = await stderrTask.ConfigureAwait(false);
+
+            Logger.Log($"{roleLabel} プロセスが終了しました。ExitCode: {proc.ExitCode}", LogLevel.Info);
+            if (!string.IsNullOrWhiteSpace(stdout))
+                Logger.Log($"{roleLabel} 標準出力: {stdout.Trim()}", LogLevel.Debug);
+
             if (proc.ExitCode != 0)
             {
-                var stderr = await proc.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+                Logger.Log($"{roleLabel} 標準エラー出力: {stderr.Trim()}", LogLevel.Warning);
                 progress?.Report($"{roleLabel}の実行が終了コード {proc.ExitCode} で終了しました。{(string.IsNullOrWhiteSpace(stderr) ? "" : " " + stderr.Trim())}");
                 return false;
             }
