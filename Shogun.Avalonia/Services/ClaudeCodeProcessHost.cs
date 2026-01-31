@@ -200,16 +200,18 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
             proc.StartInfo.RedirectStandardInput = true;
             proc.StartInfo.RedirectStandardOutput = true;
             proc.StartInfo.RedirectStandardError = true;
-            proc.StartInfo.StandardInputEncoding = Encoding.UTF8;
-            proc.StartInfo.StandardOutputEncoding = Encoding.UTF8;
-            proc.StartInfo.StandardErrorEncoding = Encoding.UTF8;
+            proc.StartInfo.StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            proc.StartInfo.StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            proc.StartInfo.StandardErrorEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
             foreach (var kv in env)
                 proc.StartInfo.Environment[kv.Key] = kv.Value;
             proc.Start();
-            var stdinWriter = new StreamWriter(proc.StandardInput.BaseStream, Encoding.UTF8) { AutoFlush = false };
+            var stdinWriter = new StreamWriter(proc.StandardInput.BaseStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = false };
             var stdout = proc.StandardOutput;
+            var stderr = proc.StandardError;
             var entry = new ProcessEntry(proc, stdinWriter);
             entry.StdoutReaderTask = Task.Run(() => ReadStdoutLoopAsync(entry, stdout));
+            _ = Task.Run(() => ReadStderrLoopAsync(stderr));
             return entry;
         }
         catch (Exception ex)
@@ -226,6 +228,7 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
             string? line;
             while ((line = await stdout.ReadLineAsync().ConfigureAwait(false)) != null)
             {
+                Logger.Log($"[Runner stdout] {line}", LogLevel.Debug);
                 TaskCompletionSource<(bool Success, string Output)>? tcs;
                 IProgress<string>? progress;
                 lock (entry.Lock)
@@ -275,6 +278,22 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
         }
     }
 
+    private static async Task ReadStderrLoopAsync(StreamReader stderr)
+    {
+        try
+        {
+            string? line;
+            while ((line = await stderr.ReadLineAsync().ConfigureAwait(false)) != null)
+            {
+                Logger.Log($"[Runner stderr] {line}", LogLevel.Debug);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"ClaudeCodeProcessHost: stderr 読み取り例外: {ex.Message}", LogLevel.Warning);
+        }
+    }
+
     private static string GetRunnerScriptContent()
     {
         return """
@@ -291,22 +310,31 @@ if (!nodeExe || !cliJs || !cwd) {
   process.exit(1);
 }
 
+// Log startup for debugging
+process.stderr.write(`[RUNNER] Started with env: nodeExe=${nodeExe}, cliJs=${cliJs}, cwd=${cwd}\n`);
+
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
 rl.on('line', (line) => {
   if (!line.trim()) return;
   
+  process.stderr.write(`[RUNNER] Received job: ${line}\n`);
+  
   let job;
   try {
     job = JSON.parse(line);
   } catch (parseErr) {
-    process.stdout.write('RESULT:' + JSON.stringify({ exitCode: 1, output: `JSON parse error: ${parseErr.message}` }) + '\n');
+    const output = `JSON parse error: ${parseErr.message}`;
+    process.stderr.write(`[RUNNER] Parse error: ${output}\n`);
+    process.stdout.write('RESULT:' + JSON.stringify({ exitCode: 1, output }) + '\n');
     return;
   }
 
   const prompt = job.prompt || '';
   const systemPromptFile = job.systemPromptFile || '';
 
+  process.stderr.write(`[RUNNER] Spawning CLI: ${nodeExe} ${cliJs} -p ${prompt.slice(0, 30)}... --append-system-prompt-file ${systemPromptFile}\n`);
+  
   let childStarted = false;
   let stderrOutput = '';
   try {
@@ -316,6 +344,8 @@ rl.on('line', (line) => {
       timeout: 60000
     });
     childStarted = true;
+    
+    process.stderr.write(`[RUNNER] Child process spawned\n`);
 
     // Close stdin immediately since we're using -p (print mode)
     child.stdin?.end();
@@ -339,16 +369,19 @@ rl.on('line', (line) => {
       const errStr = data.toString();
       if (errStr.trim()) {
         stderrOutput += errStr;
+        process.stderr.write(`[RUNNER] Child stderr: ${errStr.trim()}\n`);
         process.stdout.write('OUT:[stderr] ' + errStr.trim() + '\n');
       }
     });
 
     child.on('error', (err) => {
       const errMsg = `Child spawn error: ${err.message}`;
+      process.stderr.write(`[RUNNER] Spawn error: ${errMsg}\n`);
       process.stdout.write('RESULT:' + JSON.stringify({ exitCode: 1, output: errMsg }) + '\n');
     });
 
     child.on('close', (code) => {
+      process.stderr.write(`[RUNNER] Child process closed with code: ${code}\n`);
       if (buf.length > 0) {
         chunks.push(buf);
         process.stdout.write('OUT:' + buf + '\n');
@@ -362,11 +395,13 @@ rl.on('line', (line) => {
     });
   } catch (spawnErr) {
     const errMsg = `Spawn error: ${spawnErr.message}`;
+    process.stderr.write(`[RUNNER] Exception: ${errMsg}\n`);
     process.stdout.write('RESULT:' + JSON.stringify({ exitCode: 1, output: errMsg }) + '\n');
   }
 });
 
 rl.on('close', () => {
+  process.stderr.write('[RUNNER] stdin closed\n');
   process.exit(0);
 });
 """;
