@@ -115,9 +115,10 @@ queue/reports/ および dashboard.md は、CWD からの相対パスでアク�
         var taskContent = _queueService.ReadTaskYaml(ashigaruIndex);
         var effectiveProjectId = TryInferProjectIdFromTaskContent(taskContent) ?? projectId;
         var projectRoot = _queueService.GetProjectRoot(effectiveProjectId);
+        var taskTargetIsShogunRepo = IsTaskTargetUnderShogunRepo(taskContent);
         string userPrompt;
         string? cwdOverride = null;
-        if (!string.IsNullOrEmpty(projectRoot) && Directory.Exists(projectRoot) && !string.IsNullOrWhiteSpace(taskContent))
+        if (!taskTargetIsShogunRepo && !string.IsNullOrEmpty(projectRoot) && Directory.Exists(projectRoot) && !string.IsNullOrWhiteSpace(taskContent))
         {
             var contentForCwd = RewriteTaskTargetPathForProjectRoot(taskContent, effectiveProjectId, projectRoot);
             userPrompt = $@"以下の任務（YAML）を実行せよ。作業ディレクトリ（CWD）はプロジェクトルートに設定されている。
@@ -140,12 +141,114 @@ queue/reports/ および dashboard.md は、CWD からの相対パスでアク�
 重要: あなたの現在の作業ディレクトリ（CWD）は queue/config の基準パスである。
 queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリからの相対パスでアクセスせよ。
 
-報告: 任務完了時、報告を必ず次のパスに YAML で書き込むこと: {reportPathForPrompt} （絶対パスの場合はそのまま、相対の場合は CWD 基準。ファイルが存在しない場合は新規作成せよ。）
+報告: 任務完了時、報告を必ず次のパスに YAML で書き込むこと: queue/reports/ashigaru{ashigaruIndex}_report.yaml （CWD からの相対パス。ファイルが存在しない場合は新規作成せよ。）
 
 補足: 実装・最適化タスクで前提となる施策ドキュメント等がまだ存在しない場合は、自己分析で方針を立てて進めてよい。";
         }
         var result = await RunClaudeAsync(userPrompt, ashigaruInstructions, progress, $"足軽{ashigaruIndex}", cancellationToken, cwdOverride).ConfigureAwait(false);
+        if (result.Success)
+        {
+            WriteReportFromAshigaruResult(ashigaruIndex, taskContent, result.Output);
+        }
         return result.Success;
+    }
+
+    /// <summary>タスクの target_path が Shogun リポジトリ配下（queue/, config/, settings.yaml 等）かどうかを判定する。該当する場合は CWD を repo root にして queue/reports に報告を書けるようにする。</summary>
+    private static bool IsTaskTargetUnderShogunRepo(string? taskContent)
+    {
+        if (string.IsNullOrWhiteSpace(taskContent))
+            return true;
+        var tp = ExtractTargetPathFromTaskContent(taskContent);
+        if (string.IsNullOrWhiteSpace(tp))
+            return true;
+        tp = tp.Replace('\\', '/').Trim();
+        if (tp.StartsWith("queue/", StringComparison.Ordinal) || tp.StartsWith("config/", StringComparison.Ordinal))
+            return true;
+        var fileName = Path.GetFileName(tp);
+        if (string.Equals(fileName, "settings.yaml", StringComparison.OrdinalIgnoreCase) ||
+            (fileName?.StartsWith("dashboard", StringComparison.OrdinalIgnoreCase) == true) ||
+            (fileName?.StartsWith("ashigaru", StringComparison.OrdinalIgnoreCase) == true && fileName?.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) == true))
+            return true;
+        return false;
+    }
+
+    /// <summary>タスク YAML 文字列から target_path の値を抽出する。</summary>
+    private static string? ExtractTargetPathFromTaskContent(string taskContent)
+    {
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(taskContent);
+            var wrapper = YamlSerializer.Deserialize<TaskWrapper>(bytes);
+            return wrapper?.Task?.TargetPath?.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>報告 result 文字列の最大長。VYaml の literal scalar 制限を超えないよう抑える。</summary>
+    private const int MaxReportResultLength = 8192;
+
+    /// <summary>YAML の literal scalar で問題になりうる制御文字を除去する。</summary>
+    private static string SanitizeResultForYaml(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (c == '\n' || c == '\r' || c == '\t' || (c >= ' ' && c <= '\uFFFD'))
+                sb.Append(c);
+            else if (char.IsSurrogate(c))
+                continue;
+            else if (c < ' ')
+                sb.Append(' ');
+            else
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>足軽ジョブ完了時に stdout とタスク内容から報告 YAML を queue/reports に書き込む。エージェントがファイルに書けなくてもアプリ側で必ず保存する。</summary>
+    private void WriteReportFromAshigaruResult(int ashigaruIndex, string? taskContent, string? output)
+    {
+        var taskId = "unknown";
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+        if (!string.IsNullOrWhiteSpace(taskContent))
+        {
+            try
+            {
+                var bytes = Encoding.UTF8.GetBytes(taskContent);
+                var wrapper = YamlSerializer.Deserialize<TaskWrapper>(bytes);
+                if (!string.IsNullOrWhiteSpace(wrapper?.Task?.TaskId))
+                    taskId = wrapper.Task.TaskId;
+                if (!string.IsNullOrWhiteSpace(wrapper?.Task?.Timestamp))
+                    timestamp = wrapper.Task.Timestamp;
+            }
+            catch { /* パース失敗時は上記デフォルトのまま */ }
+        }
+        var result = (output ?? "").Trim();
+        result = SanitizeResultForYaml(result);
+        if (result.Length > MaxReportResultLength)
+            result = result.Substring(0, MaxReportResultLength) + "\n...(省略)";
+        try
+        {
+            _queueService.WriteReportYaml(ashigaruIndex, taskId, timestamp, "done", result);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            Logger.Log($"足軽{ashigaruIndex}報告のYAML出力で長さ制限超過の可能性: {ex.Message}. 要約のみ保存します。", LogLevel.Warning);
+            var fallback = $"任務完了。出力が長すぎるため要約のみ記載。元の長さ: {(output ?? "").Length} 文字。";
+            _queueService.WriteReportYaml(ashigaruIndex, taskId, timestamp, "done", fallback);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"足軽{ashigaruIndex}報告の保存に失敗: {ex.GetType().Name} {ex.Message}", LogLevel.Error);
+            var fallback = $"報告保存時にエラーが発生しました: {ex.Message}";
+            if (fallback.Length > 500)
+                fallback = fallback.Substring(0, 500) + "...";
+            _queueService.WriteReportYaml(ashigaruIndex, taskId, timestamp, "error", fallback);
+        }
     }
 
     /// <summary>タスク YAML から target_path や description に含まれるプロジェクト ID を推定する。家老が足軽ごとに別プロジェクトを割り当てている場合に使用。</summary>
