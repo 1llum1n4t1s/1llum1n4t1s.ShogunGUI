@@ -17,6 +17,9 @@ public interface IAgentWorkerService
     /// <summary>全ワーカーと常駐プロセスを終了する。アプリ終了時に呼ぶ。</summary>
     void StopAll();
 
+    /// <summary>足軽の「1回以上ジョブ実行済み」状態をリセットする。「新規で送信」時に呼び、次ジョブで /clear を送らないようにする。</summary>
+    void ResetAshigaruRunState();
+
     /// <summary>殿のメッセージを将軍に投げ、完了時に結果メッセージを返す。</summary>
     /// <param name="userInput">殿の入力。</param>
     /// <param name="projectId">プロジェクトID。</param>

@@ -29,6 +29,9 @@ public partial class TaskItemYaml
     public string? TargetPath { get; set; }
     public string? Status { get; set; }
     public string? Timestamp { get; set; }
+    /// <summary>本家: 家老が昇格/降格時に記載。opus / sonnet。省略時はデフォルトモデル。</summary>
+    [YamlMember(Alias = "model_override")]
+    public string? ModelOverride { get; set; }
 }
 
 public partial class ReportYaml

@@ -58,6 +58,22 @@ summary: ""処理サマリー""
 queue/reports/ および dashboard.md は、CWD からの相対パスでアクセスせよ。
 もし queue/reports/ 配下に報告ファイル（ashigaru*_report.yaml）が一つも存在しない場合は、その旨を dashboard.md に記載せよ。";
 
+    private const string KaroReportCheckPrompt = @"queue/reports/ の報告をすべて読み、dashboard.md の「戦果」を更新せよ。
+
+重要: あなたの現在の作業ディレクトリ（CWD）は queue/config の基準（ドキュメントルート）である。
+queue/reports/ および dashboard.md は CWD からの相対パスでアクセスせよ。
+
+そのうえで、足軽に追加で割り当てるタスク（フォローアップ作業）がある場合のみ、以下の YAML 形式で出力せよ。追加タスクがなければ「終了」のみ出力せよ。
+
+```yaml
+tasks:
+  - ashigaru_id: 1
+    description: ""タスクの説明""
+    target_path: ""対象ファイルパス（オプション）""
+```
+
+注意: 追加タスクがあるときは YAML のみ出力。ないときは「終了」のみ。余計な説明は不要。";
+
     private readonly IClaudeCodeProcessHost _processHost;
     private readonly IClaudeCodeSetupService _setupService;
     private readonly IShogunQueueService _queueService;
@@ -86,11 +102,48 @@ queue/reports/ および dashboard.md は、CWD からの相対パスでアク�
     }
 
     /// <inheritdoc />
+    public async Task<(bool Success, bool HasMoreTasks)> RunKaroReportCheckAndMaybeAssignAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var karoInstructions = _instructionsLoader.LoadKaroInstructions() ?? string.Empty;
+        var result = await RunClaudeAsync(KaroReportCheckPrompt, karoInstructions, progress, "家老（報告確認）", cancellationToken).ConfigureAwait(false);
+        if (!result.Success)
+            return (false, false);
+        if (string.IsNullOrWhiteSpace(result.Output))
+            return (true, false);
+        if (!HasTaskAssignmentsInKaroOutput(result.Output))
+            return (true, false);
+        await GenerateAshigaruTasksFromKaroOutputAsync(result.Output, cancellationToken).ConfigureAwait(false);
+        return (true, true);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> RunKaroExecutionAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
         var karoInstructions = _instructionsLoader.LoadKaroInstructions() ?? string.Empty;
         var result = await RunClaudeAsync(KaroExecutionPrompt, karoInstructions, progress, "家老（実行フェーズ）", cancellationToken).ConfigureAwait(false);
         return result.Success;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> SendClearToAshigaruAsync(int ashigaruIndex, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var max = _queueService.GetAshigaruCount();
+        if (ashigaruIndex < 1 || ashigaruIndex > max)
+            return false;
+        var ashigaruInstructions = _instructionsLoader.LoadAshigaruInstructions() ?? string.Empty;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            progress?.Report($"足軽{ashigaruIndex} に /clear を送信中…");
+            var result = await RunClaudeAsync("/clear", ashigaruInstructions, progress, $"足軽{ashigaruIndex}", cts.Token).ConfigureAwait(false);
+            return result.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            progress?.Report($"足軽{ashigaruIndex} /clear タイムアウト（次タスクへ進行）");
+            return true;
+        }
     }
 
     /// <inheritdoc />
@@ -144,7 +197,8 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
 
 補足: 実装・最適化タスクで前提となる施策ドキュメント等がまだ存在しない場合は、自己分析で方針を立てて進めてよい。";
         }
-        var result = await RunClaudeAsync(userPrompt, ashigaruInstructions, progress, $"足軽{ashigaruIndex}", cancellationToken, cwdOverride).ConfigureAwait(false);
+        var ashigaruModelOverride = ExtractModelOverrideFromTaskContent(taskContent);
+        var result = await RunClaudeAsync(userPrompt, ashigaruInstructions, progress, $"足軽{ashigaruIndex}", cancellationToken, cwdOverride, ashigaruModelOverride).ConfigureAwait(false);
         if (result.Success)
         {
             WriteReportFromAshigaruResult(ashigaruIndex, taskContent, result.Output);
@@ -179,6 +233,24 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
             var bytes = Encoding.UTF8.GetBytes(taskContent);
             var wrapper = YamlHelper.Deserialize<TaskWrapper>(bytes);
             return wrapper?.Task?.TargetPath?.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>タスク YAML 文字列から model_override（本家: 昇格/降格）の値を抽出する。</summary>
+    private static string? ExtractModelOverrideFromTaskContent(string? taskContent)
+    {
+        if (string.IsNullOrWhiteSpace(taskContent))
+            return null;
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(taskContent);
+            var wrapper = YamlHelper.Deserialize<TaskWrapper>(bytes);
+            var v = wrapper?.Task?.ModelOverride?.Trim();
+            return string.IsNullOrEmpty(v) ? null : v;
         }
         catch
         {
@@ -361,7 +433,8 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
 
     /// <summary>常駐プロセスにジョブを送り、結果を返す。プロセスは終了しない。</summary>
     /// <param name="cwdOverride">ジョブの作業ディレクトリ（プロジェクトルート等）。null のときは RUNNER_CWD（queue/config の基準）を使用。</param>
-    private async Task<(bool Success, string Output)> RunClaudeAsync(string userPrompt, string systemPromptContent, IProgress<string>? progress, string roleLabel, CancellationToken cancellationToken, string? cwdOverride = null)
+    /// <param name="modelOverride">足軽用のモデル上書き（本家の model_override: opus / sonnet）。null のときは設定のデフォルトを使用。</param>
+    private async Task<(bool Success, string Output)> RunClaudeAsync(string userPrompt, string systemPromptContent, IProgress<string>? progress, string roleLabel, CancellationToken cancellationToken, string? cwdOverride = null, string? modelOverride = null)
     {
         var repoRoot = _queueService.GetRepoRoot();
         if (string.IsNullOrEmpty(repoRoot) || !Directory.Exists(repoRoot))
@@ -386,7 +459,7 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
         }
         else if (roleLabel.StartsWith("足軽"))
         {
-            modelId = settings.ModelAshigaru;
+            modelId = !string.IsNullOrWhiteSpace(modelOverride) ? modelOverride!.Trim() : settings.ModelAshigaru;
             thinking = settings.ThinkingAshigaru;
         }
 
@@ -424,9 +497,70 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
     /// <summary>ロール表示名に対応する常駐プロセスキーを返す。家老の3フェーズは同一プロセス「家老」を使用する。</summary>
     private static string GetProcessKeyForRole(string roleLabel)
     {
-        if (roleLabel == "家老（実行フェーズ）" || roleLabel == "家老（報告集約）")
+        if (roleLabel == "家老（実行フェーズ）" || roleLabel == "家老（報告集約）" || roleLabel == "家老（報告確認）")
             return "家老";
         return roleLabel;
+    }
+
+    /// <summary>家老の出力文字列から YAML コンテンツを抽出する。</summary>
+    /// <param name="karoYaml">家老の生出力。</param>
+    /// <returns>抽出した YAML 文字列。見つからなければ null。</returns>
+    private static string? ExtractYamlFromKaroOutput(string karoYaml)
+    {
+        if (string.IsNullOrWhiteSpace(karoYaml))
+            return null;
+        var yamlText = string.Empty;
+        if (karoYaml.Contains("```yaml"))
+        {
+            var start = karoYaml.IndexOf("```yaml", StringComparison.Ordinal) + 7;
+            var end = karoYaml.IndexOf("```", start, StringComparison.Ordinal);
+            if (end > start) yamlText = karoYaml.Substring(start, end - start);
+        }
+        else if (karoYaml.Contains("```"))
+        {
+            var start = karoYaml.IndexOf("```", StringComparison.Ordinal) + 3;
+            var end = karoYaml.IndexOf("```", start, StringComparison.Ordinal);
+            if (end > start) yamlText = karoYaml.Substring(start, end - start);
+        }
+        if (string.IsNullOrWhiteSpace(yamlText))
+        {
+            var lines = karoYaml.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            var yamlLines = new List<string>();
+            var foundStart = false;
+            foreach (var line in lines)
+            {
+                if (!foundStart && (line.TrimStart().StartsWith("tasks:", StringComparison.OrdinalIgnoreCase) || line.TrimStart().StartsWith("---")))
+                    foundStart = true;
+                if (foundStart)
+                    yamlLines.Add(line);
+            }
+            yamlText = yamlLines.Count > 0 ? string.Join("\n", yamlLines) : karoYaml.Trim();
+        }
+        else
+        {
+            yamlText = yamlText.Trim();
+        }
+        return string.IsNullOrWhiteSpace(yamlText) ? null : yamlText;
+    }
+
+    /// <summary>家老の出力にタスク割り当て YAML が含まれるか判定する。</summary>
+    /// <param name="output">家老の生出力。</param>
+    /// <returns>タスク割り当てが 1 件以上あれば true。</returns>
+    private static bool HasTaskAssignmentsInKaroOutput(string output)
+    {
+        var yamlText = ExtractYamlFromKaroOutput(output);
+        if (string.IsNullOrWhiteSpace(yamlText))
+            return false;
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(yamlText);
+            var wrapper = YamlHelper.Deserialize<TaskAssignmentYaml>(bytes);
+            return wrapper?.Assignments != null && wrapper.Assignments.Count > 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>家老の YAML 出力から足軽タスクを生成する。</summary>
@@ -434,61 +568,13 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
     {
         try
         {
-            var repoRoot = _queueService.GetRepoRoot();
-            
-            // markdown コードブロック（```yaml ... ```）を抽出
-            var yamlText = string.Empty;
-            if (karoYaml.Contains("```yaml"))
-            {
-                var start = karoYaml.IndexOf("```yaml", StringComparison.Ordinal) + 7;
-                var end = karoYaml.IndexOf("```", start, StringComparison.Ordinal);
-                if (end > start) yamlText = karoYaml.Substring(start, end - start);
-            }
-            else if (karoYaml.Contains("```"))
-            {
-                var start = karoYaml.IndexOf("```", StringComparison.Ordinal) + 3;
-                var end = karoYaml.IndexOf("```", start, StringComparison.Ordinal);
-                if (end > start) yamlText = karoYaml.Substring(start, end - start);
-            }
-            
-            // コードブロックが見つからない場合は、全体が YAML であると期待してパースを試みるが、
-            // その前に YAML らしい開始部分を探す（YAML パースエラー対策）
-            if (string.IsNullOrWhiteSpace(yamlText))
-            {
-                var lines = karoYaml.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-                var yamlLines = new List<string>();
-                bool foundStart = false;
-                foreach (var line in lines)
-                {
-                    if (!foundStart && (line.TrimStart().StartsWith("tasks:", StringComparison.OrdinalIgnoreCase) || line.TrimStart().StartsWith("---")))
-                    {
-                        foundStart = true;
-                    }
-                    if (foundStart)
-                    {
-                        yamlLines.Add(line);
-                    }
-                }
-                if (yamlLines.Count > 0)
-                {
-                    yamlText = string.Join("\n", yamlLines);
-                }
-                else
-                {
-                    yamlText = karoYaml.Trim();
-                }
-            }
-            else
-            {
-                yamlText = yamlText.Trim();
-            }
-
+            var yamlText = ExtractYamlFromKaroOutput(karoYaml);
             if (string.IsNullOrWhiteSpace(yamlText))
             {
                 Logger.Log("家老の出力から YAML コンテンツを抽出できませんでした。", LogLevel.Warning);
                 return;
             }
-            
+            var repoRoot = _queueService.GetRepoRoot();
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(yamlText);

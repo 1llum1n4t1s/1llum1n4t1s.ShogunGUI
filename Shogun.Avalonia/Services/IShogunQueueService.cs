@@ -66,4 +66,7 @@ public interface IShogunQueueService
 
     /// <summary>config/projects.yaml に登録されているプロジェクト ID の一覧を取得する。</summary>
     IReadOnlyList<string> GetProjectIds();
+
+    /// <summary>queue/tasks と queue/reports を本家の --clean と同様に初期化する。新規で送信する前に呼ぶ。</summary>
+    void ResetQueueForNewSend();
 }

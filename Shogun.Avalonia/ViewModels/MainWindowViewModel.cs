@@ -584,6 +584,17 @@ public partial class MainWindowViewModel : ObservableObject
         CodeDocument = new TextDocument(string.Empty);
     }
 
+    /// <summary>queue/tasks と queue/reports をリセットしてから送信する（本家の --clean 相当）。足軽の /clear 状態もリセットする。</summary>
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    public async Task SendMessageAsNewAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ChatInput) || IsAiProcessing)
+            return;
+        _queueService.ResetQueueForNewSend();
+        _agentWorkerService.ResetAshigaruRunState();
+        await SendMessageAsync();
+    }
+
     /// <summary>メッセージを送信する（将軍AIで家老への指示文を生成→queue 書き込み→家老・足軽実行）。</summary>
     [RelayCommand(AllowConcurrentExecutions = false)]
     public async Task SendMessageAsync()

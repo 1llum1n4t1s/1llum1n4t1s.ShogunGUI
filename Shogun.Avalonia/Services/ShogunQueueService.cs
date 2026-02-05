@@ -311,4 +311,22 @@ public class ShogunQueueService : IShogunQueueService
     {
         return _projectService.GetProjects().Select(p => p.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
     }
+
+    /// <inheritdoc />
+    public void ResetQueueForNewSend()
+    {
+        var repo = GetRepoRoot();
+        if (string.IsNullOrEmpty(repo))
+            return;
+        var tasksDir = Path.Combine(repo, "queue", "tasks");
+        var reportsDir = Path.Combine(repo, "queue", "reports");
+        Directory.CreateDirectory(tasksDir);
+        Directory.CreateDirectory(reportsDir);
+        var max = GetAshigaruCount();
+        for (var i = 1; i <= max; i++)
+        {
+            WriteTaskYaml(i, "", "", "", null, "idle", "");
+            WriteReportYaml(i, "", "", "idle", "null", false, null, null, null);
+        }
+    }
 }

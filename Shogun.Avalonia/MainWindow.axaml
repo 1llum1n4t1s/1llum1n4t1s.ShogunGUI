@@ -244,16 +244,21 @@
                                          Padding="8,8"
                                          KeyDown="OnChatInputKeyDown"
                                          FontSize="13"/>
-                                <Button Grid.Column="1"
-                                        Content="送信"
-                                        Click="OnSendButtonClick"
-                                        IsEnabled="{Binding !IsAiProcessing}"
-                                        Margin="8,0,0,0"
-                                        MinWidth="70"
-                                        VerticalAlignment="Stretch"
-                                        Padding="12,8"
-                                        FontSize="13"
-                                        FontWeight="SemiBold"/>
+                                <StackPanel Grid.Column="1" Spacing="6" Margin="8,0,0,0" VerticalAlignment="Stretch">
+                                    <Button Content="送信"
+                                            Click="OnSendButtonClick"
+                                            IsEnabled="{Binding !IsAiProcessing}"
+                                            MinWidth="70"
+                                            Padding="12,8"
+                                            FontSize="13"
+                                            FontWeight="SemiBold"/>
+                                    <Button Content="新規で送信"
+                                            Click="OnSendAsNewButtonClick"
+                                            IsEnabled="{Binding !IsAiProcessing}"
+                                            MinWidth="70"
+                                            Padding="12,8"
+                                            FontSize="12"/>
+                                </StackPanel>
                             </Grid>
                         </Grid>
                     </Border>

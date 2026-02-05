@@ -110,6 +110,15 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>「新規で送信」クリック時：queue/tasks と queue/reports をリセットしてから送信する。</summary>
+    private async void OnSendAsNewButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && !vm.IsAiProcessing)
+        {
+            await vm.SendMessageAsNewAsync();
+        }
+    }
+
     private void OnApproveKaroExecution(object? sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is string blockId && DataContext is MainWindowViewModel vm)

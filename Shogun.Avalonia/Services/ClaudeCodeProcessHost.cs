@@ -98,7 +98,11 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
 
             foreach (var role in roles)
             {
-                var entry = StartRunnerProcess(nodeExe, runnerPath, env);
+                var roleEnv = new Dictionary<string, string>(env)
+                {
+                    ["RUNNER_ROLE"] = role
+                };
+                var entry = StartRunnerProcess(nodeExe, runnerPath, roleEnv);
                 if (entry != null)
                 {
                     _processes[role] = entry;
@@ -451,12 +455,15 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
         return """
 const { spawn } = require('child_process');
 const readline = require('readline');
+const fs = require('fs');
 
 const nodeExe = process.env.RUNNER_NODE_EXE;
 const cliJs = process.env.RUNNER_CLI_JS;
 const cwd = process.env.RUNNER_CWD;
 const addDir = process.env.RUNNER_ADD_DIR || '';
 const skipPermissions = process.env.RUNNER_SKIP_PERMISSIONS === 'true';
+const isResident = process.env.RUNNER_RESIDENT === 'true';
+const role = process.env.RUNNER_ROLE || '';
 
 if (!nodeExe || !cliJs || !cwd) {
   const msg = `RUNNER env missing: nodeExe=${nodeExe}, cliJs=${cliJs}, cwd=${cwd}`;
@@ -464,8 +471,121 @@ if (!nodeExe || !cliJs || !cwd) {
   process.exit(1);
 }
 
-// Log startup for debugging
-process.stderr.write(`[RUNNER] Started with env: nodeExe=${nodeExe}, cliJs=${cliJs}, cwd=${cwd}, addDir=${addDir}, skipPermissions=${skipPermissions}\n`);
+process.stderr.write(`[RUNNER] Started role=${role}, resident=${isResident}, cwd=${cwd}\n`);
+
+let residentChild = null;
+let residentStdin = null;
+let residentChunks = [];
+let residentTimer = null;
+const RESIDENT_INACTIVITY_MS = 30000;
+
+function clearResidentTimer() {
+  if (residentTimer) {
+    clearTimeout(residentTimer);
+    residentTimer = null;
+  }
+}
+
+function flushResidentResult(exitCode) {
+  clearResidentTimer();
+  const fullOutput = residentChunks.join('\n').replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"').replace(/\\n/g, '\\\\n');
+  process.stdout.write(`RESULT: exitCode: ${exitCode || 0}, output: "${fullOutput}"\n`);
+  residentChunks = [];
+}
+
+function runResidentKaroJob(job, jobCwd) {
+  const prompt = job.prompt || '';
+  const systemPromptFile = job.systemPromptFile || '';
+  const modelId = job.modelId;
+  const thinking = job.thinking === 'true';
+
+  if (!residentChild) {
+    let appendPrompt = '';
+    if (systemPromptFile && fs.existsSync(systemPromptFile)) {
+      try {
+        appendPrompt = fs.readFileSync(systemPromptFile, 'utf8');
+      } catch (e) {
+        process.stderr.write(`[RUNNER] Resident: failed to read system prompt file: ${e.message}\n`);
+      }
+    }
+    const args = [cliJs];
+    if (appendPrompt) args.push('--append-system-prompt', appendPrompt);
+    if (addDir.trim()) {
+      args.push('--add-dir', addDir.trim());
+      if (!skipPermissions) {
+        const normalizedPath = addDir.trim().replace(/\\\\/g, '/');
+        args.push('--allowedTools', 'Read', 'Edit(' + normalizedPath + '/*)', 'Write(' + normalizedPath + '/*)');
+      }
+    }
+    if (skipPermissions) args.push('--dangerously-skip-permissions');
+    if (modelId) args.push('--model', modelId);
+    if (thinking) args.push('--thinking');
+
+    process.stderr.write(`[RUNNER] Resident Karo: spawning long-lived child (no -p)\n`);
+    try {
+      const child = spawn(nodeExe, args, {
+        cwd: jobCwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 600000
+      });
+      residentChild = child;
+      residentStdin = child.stdin;
+
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (data) => {
+        const str = data.toString();
+        let idx;
+        let buf = str;
+        const nl = '\n';
+        while ((idx = buf.indexOf(nl)) !== -1) {
+          const line2 = buf.slice(0, idx);
+          buf = buf.slice(idx + 1);
+          residentChunks.push(line2);
+          process.stdout.write('OUT:' + line2 + nl);
+        }
+        if (buf.length > 0) residentChunks.push(buf);
+        clearResidentTimer();
+        residentTimer = setTimeout(() => flushResidentResult(0), RESIDENT_INACTIVITY_MS);
+      });
+
+      child.stderr.on('data', (data) => {
+        const errStr = data.toString().trim();
+        if (errStr) {
+          process.stderr.write(`[RUNNER] Resident child stderr: ${errStr}\n`);
+          process.stdout.write('OUT:[stderr] ' + errStr + '\\n');
+        }
+      });
+
+      child.on('close', (code) => {
+        process.stderr.write(`[RUNNER] Resident child closed with code: ${code}\n`);
+        residentChild = null;
+        residentStdin = null;
+        if (residentChunks.length > 0) flushResidentResult(code || 0);
+      });
+
+      child.on('error', (err) => {
+        process.stderr.write(`[RUNNER] Resident child error: ${err.message}\n`);
+        residentChild = null;
+        residentStdin = null;
+        flushResidentResult(1);
+      });
+    } catch (spawnErr) {
+      process.stderr.write(`[RUNNER] Resident spawn error: ${spawnErr.message}\n`);
+      process.stdout.write('RESULT: exitCode: 1, output: "' + spawnErr.message.replace(/"/g, '\\\\"') + '"\n');
+      return;
+    }
+  }
+
+  residentChunks = [];
+  clearResidentTimer();
+  residentTimer = setTimeout(() => flushResidentResult(0), RESIDENT_INACTIVITY_MS);
+  if (residentStdin && !residentStdin.destroyed) {
+    residentStdin.write(prompt + '\n');
+    residentStdin.write('\n');
+  } else {
+    flushResidentResult(1);
+  }
+}
 
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
@@ -474,13 +594,12 @@ let currentJobLines = [];
 rl.on('line', (line) => {
   if (line.trim() === '---') {
     if (currentJobLines.length === 0) return;
-    
+
     const jobText = currentJobLines.join('\n');
     currentJobLines = [];
-    
-    process.stderr.write(`[RUNNER] Received job:\n${jobText}\n`);
-    
-    // 簡易的な YAML 解析
+
+    process.stderr.write(`[RUNNER] Received job (${jobText.length} chars)\n`);
+
     const job = {};
     jobText.split('\n').forEach(l => {
       const parts = l.split(':');
@@ -488,7 +607,7 @@ rl.on('line', (line) => {
         const key = parts[0].trim();
         let val = parts.slice(1).join(':').trim();
         if (val.startsWith('"') && val.endsWith('"')) {
-          val = val.substring(1, val.length - 1).replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\r/g, '\r').replace(/\\n/g, '\n');
+          val = val.substring(1, val.length - 1).replace(/\\\\\\\\/g, '\\\\').replace(/\\\\"/g, '"').replace(/\\\\r/g, '\\r').replace(/\\\\n/g, '\\n');
         }
         job[key] = val;
       }
@@ -500,11 +619,16 @@ rl.on('line', (line) => {
     const thinking = job.thinking === 'true';
     const jobCwd = (job.cwd && String(job.cwd).trim()) || cwd;
 
+    if (isResident && role === '家老') {
+      runResidentKaroJob(job, jobCwd);
+      return;
+    }
+
     const args = [cliJs, '-p', prompt, '--append-system-prompt-file', systemPromptFile];
     if (addDir.trim()) {
       args.push('--add-dir', addDir.trim());
       if (!skipPermissions) {
-        const normalizedPath = addDir.trim().replace(/\\/g, '/');
+        const normalizedPath = addDir.trim().replace(/\\\\/g, '/');
         args.push('--allowedTools', 'Read', 'Edit(' + normalizedPath + '/*)', 'Write(' + normalizedPath + '/*)');
       }
     }
@@ -519,8 +643,7 @@ rl.on('line', (line) => {
     }
 
     process.stderr.write(`[RUNNER] Spawning CLI: ${nodeExe} ${args.join(' ')} (cwd=${jobCwd})\n`);
-    
-    let childStarted = false;
+
     let stderrOutput = '';
     try {
       const child = spawn(nodeExe, args, {
@@ -528,11 +651,9 @@ rl.on('line', (line) => {
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 600000
       });
-      childStarted = true;
-      
+
       process.stderr.write(`[RUNNER] Child process spawned\n`);
 
-      // Close stdin immediately since we're using -p (print mode)
       child.stdin?.end();
 
       const chunks = [];

@@ -27,6 +27,8 @@ public class AgentWorkerService : IAgentWorkerService
     private List<Task>? _ashigaruLoops;
     private bool _started;
     private ISettingsService? _settingsService;
+    private readonly HashSet<int> _ashigaruHasRunOnce = new();
+    private readonly object _ashigaruRunStateLock = new();
 
     /// <summary>サービスを生成する。</summary>
     public AgentWorkerService(IClaudeCodeRunService runService, IShogunQueueService queueService, IClaudeCodeProcessHost processHost)
@@ -140,7 +142,7 @@ public class AgentWorkerService : IAgentWorkerService
                 for (var i = 1; i <= ashigaruCount; i++)
                 {
                     var taskContent = _queueService.ReadTaskYaml(i);
-                    if (!string.IsNullOrWhiteSpace(taskContent) && (taskContent.Contains("task:", StringComparison.Ordinal) || taskContent.Contains("status:", StringComparison.Ordinal)))
+                    if (!string.IsNullOrWhiteSpace(taskContent) && taskContent.Contains("status: assigned", StringComparison.Ordinal))
                         assigned.Add(i);
                 }
                 if (assigned.Count == 0)
@@ -189,22 +191,75 @@ public class AgentWorkerService : IAgentWorkerService
                     shouldExecuteKaroPhase3 = approved;
                 }
 
+                string successMessage;
                 if (shouldExecuteKaroPhase3)
                 {
                     var karoExecOk = await _runService.RunKaroExecutionAsync(job.KaroProgress, ct).ConfigureAwait(false);
                     var reportOk = await _runService.RunKaroReportAggregationAsync(job.ReportProgress, ct).ConfigureAwait(false);
-                    var resultMessage = (karoExecOk && reportOk)
+                    successMessage = (karoExecOk && reportOk)
                         ? $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽{assigned.Count}名・家老（改修）・家老（報告集約）の実行が完了しました。"
                         : $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽の実行は完了しましたが、家老（改修・報告集約）に失敗しました。ダッシュボードで確認してください。";
-                    job.ResultTcs.TrySetResult(resultMessage);
                 }
                 else
                 {
                     var reportOk = await _runService.RunKaroReportAggregationAsync(job.ReportProgress, ct).ConfigureAwait(false);
-                    var resultMessage = reportOk
+                    successMessage = reportOk
                         ? $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽{assigned.Count}名・家老（報告集約）の実行が完了しました。（コード改修は却下されました）"
                         : $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽の実行は完了しましたが、家老（報告集約）に失敗しました。ダッシュボードで確認してください。";
-                    job.ResultTcs.TrySetResult(resultMessage);
+                }
+                while (true)
+                {
+                    var (checkOk, hasMoreTasks) = await _runService.RunKaroReportCheckAndMaybeAssignAsync(job.KaroProgress, ct).ConfigureAwait(false);
+                    if (!checkOk)
+                    {
+                        job.ResultTcs.TrySetResult($"指示をキューに追加しました（{karoJob.CommandId}）。家老（報告確認）に失敗しました。ダッシュボードで確認してください。");
+                        break;
+                    }
+                    if (!hasMoreTasks)
+                    {
+                        job.ResultTcs.TrySetResult(successMessage);
+                        break;
+                    }
+                    assigned.Clear();
+                    for (var i = 1; i <= ashigaruCount; i++)
+                    {
+                        var taskContent = _queueService.ReadTaskYaml(i);
+                        if (!string.IsNullOrWhiteSpace(taskContent) && taskContent.Contains("status: assigned", StringComparison.Ordinal))
+                            assigned.Add(i);
+                    }
+                    if (assigned.Count == 0)
+                    {
+                        job.ResultTcs.TrySetResult(successMessage);
+                        break;
+                    }
+                    doneTcsList.Clear();
+                    writeTasks.Clear();
+                    foreach (var n in assigned)
+                    {
+                        if (n < 1 || n > _ashigaruChannels.Count)
+                            continue;
+                        var doneTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        doneTcsList.Add(doneTcs);
+                        var vt = _ashigaruChannels[n - 1].Writer.WriteAsync(new AshigaruJob { AshigaruIndex = n, Progress = job.AshigaruProgressFor(n), DoneTcs = doneTcs, ProjectId = job.ProjectId }, ct);
+                        writeTasks.Add(vt.AsTask());
+                    }
+                    await Task.WhenAll(writeTasks).ConfigureAwait(false);
+                    await Task.WhenAll(doneTcsList.Select(t => t.Task)).ConfigureAwait(false);
+                    if (shouldExecuteKaroPhase3)
+                    {
+                        var karoExecOk = await _runService.RunKaroExecutionAsync(job.KaroProgress, ct).ConfigureAwait(false);
+                        var reportOk = await _runService.RunKaroReportAggregationAsync(job.ReportProgress, ct).ConfigureAwait(false);
+                        successMessage = (karoExecOk && reportOk)
+                            ? $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽の複数ラウンド実行が完了しました。"
+                            : $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽の複数ラウンド実行は完了しましたが、家老（改修・報告集約）に失敗しました。ダッシュボードで確認してください。";
+                    }
+                    else
+                    {
+                        var reportOk = await _runService.RunKaroReportAggregationAsync(job.ReportProgress, ct).ConfigureAwait(false);
+                        successMessage = reportOk
+                            ? $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽の複数ラウンド実行が完了しました。（コード改修は却下）"
+                            : $"指示をキューに追加しました（{karoJob.CommandId}）。家老・足軽の複数ラウンド実行は完了しましたが、家老（報告集約）に失敗しました。ダッシュボードで確認してください。";
+                    }
                 }
             }
             catch (Exception ex)
@@ -224,7 +279,20 @@ public class AgentWorkerService : IAgentWorkerService
         {
             try
             {
+                bool sendClearFirst;
+                lock (_ashigaruRunStateLock)
+                {
+                    sendClearFirst = _ashigaruHasRunOnce.Contains(aj.AshigaruIndex);
+                }
+                if (sendClearFirst)
+                {
+                    await _runService.SendClearToAshigaruAsync(aj.AshigaruIndex, aj.Progress, ct).ConfigureAwait(false);
+                }
                 var ok = await _runService.RunAshigaruAsync(aj.AshigaruIndex, aj.Progress, ct, aj.ProjectId).ConfigureAwait(false);
+                lock (_ashigaruRunStateLock)
+                {
+                    _ashigaruHasRunOnce.Add(aj.AshigaruIndex);
+                }
                 aj.DoneTcs.TrySetResult(ok);
             }
             catch (Exception ex)
@@ -232,6 +300,15 @@ public class AgentWorkerService : IAgentWorkerService
                 Logger.LogException($"足軽{aj.AshigaruIndex}ワーカーで例外", ex);
                 aj.DoneTcs.TrySetResult(false);
             }
+        }
+    }
+
+    /// <inheritdoc />
+    public void ResetAshigaruRunState()
+    {
+        lock (_ashigaruRunStateLock)
+        {
+            _ashigaruHasRunOnce.Clear();
         }
     }
 
