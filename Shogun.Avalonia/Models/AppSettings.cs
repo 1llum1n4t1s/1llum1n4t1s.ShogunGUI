@@ -1,12 +1,9 @@
-using VYaml.Annotations;
-
 namespace Shogun.Avalonia.Models;
 
 /// <summary>
 /// アプリケーション設定モデル。
 /// skill.*, screenshot.*, logging.* は config/settings.yaml。足軽人数・役割別モデルはアプリで編集可能。
 /// </summary>
-[YamlObject]
 public partial class AppSettings
 {
     /// <summary>足軽の人数（1～20）。将軍・家老以外の実働エージェント数。</summary>
@@ -59,4 +56,7 @@ public partial class AppSettings
 
     /// <summary>ドキュメント出力先ルート（報告書等の作成先）。</summary>
     public string DocumentRoot { get; set; } = string.Empty;
+
+    /// <summary>Claude Code CLI のパーミッションプロンプトをスキップするか（--dangerously-skip-permissions）。自己責任で有効化。Windows で --allowedTools が効かない場合の回避用。</summary>
+    public bool DangerouslySkipPermissions { get; set; }
 }

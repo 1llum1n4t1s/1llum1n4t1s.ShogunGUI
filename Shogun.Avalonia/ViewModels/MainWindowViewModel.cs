@@ -413,7 +413,8 @@ public partial class MainWindowViewModel : ObservableObject
             ApiEndpoint = current.ApiEndpoint,
             RepoRoot = current.RepoRoot,
             KaroExecutionPermissionMode = current.KaroExecutionPermissionMode,
-            DocumentRoot = current.DocumentRoot
+            DocumentRoot = current.DocumentRoot,
+            DangerouslySkipPermissions = current.DangerouslySkipPermissions
         };
         _settingsService.Save(newSettings);
         UpdateModelInfos(newSettings);

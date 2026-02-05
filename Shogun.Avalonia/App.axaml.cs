@@ -5,8 +5,6 @@ using Avalonia.Markup.Xaml;
 using Shogun.Avalonia.Services;
 using Shogun.Avalonia.ViewModels;
 
-using VYaml.Serialization;
-
 namespace Shogun.Avalonia;
 
 public partial class App : Application
@@ -40,7 +38,8 @@ public partial class App : Application
             
             desktop.MainWindow = new MainWindow
             {
-                DataContext = vm
+                DataContext = vm,
+                SettingsService = settingsService
             };
 
             desktop.Exit += (s, e) =>

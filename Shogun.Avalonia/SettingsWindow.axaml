@@ -72,6 +72,11 @@
                 </StackPanel>
 
                 <StackPanel Spacing="4">
+                    <CheckBox Content="Claude Code CLI のパーミッションをスキップ（dangerously_skip_permissions）" IsChecked="{Binding DangerouslySkipPermissions}"/>
+                    <TextBlock Text="※ Windows で config/queue の編集が承認プロンプトで止まる場合の回避用。有効時は --dangerously-skip-permissions を渡します。自己責任で有効にしてください。変更後はアプリ再起動が必要です。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
                     <TextBlock Text="足軽の人数（1～20）"/>
                     <ComboBox ItemsSource="{Binding AshigaruCountOptions}" SelectedItem="{Binding AshigaruCount}" MinWidth="80" HorizontalAlignment="Left"/>
                     <TextBlock Text="※ 変更後はアプリ再起動を推奨" FontSize="11" Foreground="Gray"/>

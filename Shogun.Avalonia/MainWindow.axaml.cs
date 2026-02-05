@@ -11,8 +11,13 @@ namespace Shogun.Avalonia;
 
 public partial class MainWindow : Window
 {
-    private readonly ISettingsService _settingsService = new SettingsService();
+    /// <summary>App から渡される設定サービス。未設定時はフォールバック用の自前インスタンスを使用。</summary>
+    public ISettingsService? SettingsService { get; set; }
+
+    private readonly ISettingsService _settingsServiceFallback = new SettingsService();
     private readonly IProjectService _projectService = new ProjectService();
+
+    private ISettingsService SettingsServiceOrFallback => SettingsService ?? _settingsServiceFallback;
 
     public MainWindow()
     {
@@ -51,7 +56,7 @@ public partial class MainWindow : Window
     {
         var w = new SettingsWindow();
         var mainVm = DataContext as MainWindowViewModel;
-        var vm = new SettingsViewModel(_settingsService, mainVm?.ClaudeModelsService, () =>
+        var vm = new SettingsViewModel(SettingsServiceOrFallback, mainVm?.ClaudeModelsService, () =>
         {
             w.Close();
             if (DataContext is MainWindowViewModel m)

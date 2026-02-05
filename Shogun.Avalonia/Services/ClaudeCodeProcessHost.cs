@@ -77,11 +77,15 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
             for (var i = 1; i <= ashigaruCount; i++)
                 roles.Add($"足軽{i}");
 
+            var settings = _queueService.GetSettings();
+            Logger.Log($"ClaudeCodeProcessHost: DangerouslySkipPermissions={settings.DangerouslySkipPermissions}（config/settings.yaml より読み取り）", LogLevel.Info);
             var env = new Dictionary<string, string>
             {
                 ["RUNNER_NODE_EXE"] = nodeExe,
                 ["RUNNER_CLI_JS"] = cliJs,
                 ["RUNNER_CWD"] = repoRoot,
+                ["RUNNER_ADD_DIR"] = repoRoot,
+                ["RUNNER_SKIP_PERMISSIONS"] = settings.DangerouslySkipPermissions ? "true" : "false",
                 ["CI"] = "true",
                 ["NO_COLOR"] = "true",
                 ["TERM"] = "dumb",
@@ -373,9 +377,15 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
                 if (outputIdx >= 0)
                 {
                     var exitStr = rest[..outputIdx].Trim();
-                    var comma = exitStr.LastIndexOf(',');
-                    if (comma >= 0)
-                        int.TryParse(exitStr[(comma + 1)..].Trim(), out exitCode);
+                    var exitCodePrefix = "exitCode:";
+                    var exitCodeIdx = exitStr.IndexOf(exitCodePrefix, StringComparison.OrdinalIgnoreCase);
+                    if (exitCodeIdx >= 0)
+                    {
+                        var numStart = exitCodeIdx + exitCodePrefix.Length;
+                        var commaIdx = exitStr.IndexOf(',', numStart);
+                        var numStr = commaIdx >= 0 ? exitStr.Substring(numStart, commaIdx - numStart).Trim() : exitStr.Substring(numStart).Trim();
+                        int.TryParse(numStr, out exitCode);
+                    }
                     var valueStart = rest.IndexOf('"', outputIdx + 7);
                     if (valueStart >= 0)
                     {
@@ -445,6 +455,8 @@ const readline = require('readline');
 const nodeExe = process.env.RUNNER_NODE_EXE;
 const cliJs = process.env.RUNNER_CLI_JS;
 const cwd = process.env.RUNNER_CWD;
+const addDir = process.env.RUNNER_ADD_DIR || '';
+const skipPermissions = process.env.RUNNER_SKIP_PERMISSIONS === 'true';
 
 if (!nodeExe || !cliJs || !cwd) {
   const msg = `RUNNER env missing: nodeExe=${nodeExe}, cliJs=${cliJs}, cwd=${cwd}`;
@@ -453,7 +465,7 @@ if (!nodeExe || !cliJs || !cwd) {
 }
 
 // Log startup for debugging
-process.stderr.write(`[RUNNER] Started with env: nodeExe=${nodeExe}, cliJs=${cliJs}, cwd=${cwd}\n`);
+process.stderr.write(`[RUNNER] Started with env: nodeExe=${nodeExe}, cliJs=${cliJs}, cwd=${cwd}, addDir=${addDir}, skipPermissions=${skipPermissions}\n`);
 
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
@@ -489,6 +501,16 @@ rl.on('line', (line) => {
     const jobCwd = (job.cwd && String(job.cwd).trim()) || cwd;
 
     const args = [cliJs, '-p', prompt, '--append-system-prompt-file', systemPromptFile];
+    if (addDir.trim()) {
+      args.push('--add-dir', addDir.trim());
+      if (!skipPermissions) {
+        const normalizedPath = addDir.trim().replace(/\\/g, '/');
+        args.push('--allowedTools', 'Read', 'Edit(' + normalizedPath + '/*)', 'Write(' + normalizedPath + '/*)');
+      }
+    }
+    if (skipPermissions) {
+      args.push('--dangerously-skip-permissions');
+    }
     if (modelId) {
       args.push('--model', modelId);
     }

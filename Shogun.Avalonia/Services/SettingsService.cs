@@ -76,7 +76,8 @@ public class SettingsService : ISettingsService
                     s.KaroExecutionPermissionMode = ExtractYamlValue(trimmed.Substring(21));
                 if (trimmed.StartsWith("document_root:"))
                     s.DocumentRoot = ExtractYamlValue(trimmed.Substring(14));
-                
+                if (trimmed.StartsWith("dangerously_skip_permissions:"))
+                    s.DangerouslySkipPermissions = ExtractYamlValue(trimmed.Substring(29)).Equals("true", StringComparison.OrdinalIgnoreCase);
                 inModel = inThinking = false;
                 continue;
             }
@@ -134,6 +135,7 @@ public class SettingsService : ISettingsService
         sb.AppendLine($"ashigaru_count: {s.AshigaruCount}");
         sb.AppendLine($"karo_permission_mode: {s.KaroExecutionPermissionMode}");
         sb.AppendLine($"document_root: {quote(s.DocumentRoot)}");
+        sb.AppendLine($"dangerously_skip_permissions: {s.DangerouslySkipPermissions.ToString().ToLower()}");
         sb.AppendLine();
         sb.AppendLine("language: ja");
         sb.AppendLine();

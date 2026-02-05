@@ -5,7 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Shogun.Avalonia.Models;
-using VYaml.Serialization;
+using Shogun.Avalonia.Util;
 
 namespace Shogun.Avalonia.Services;
 
@@ -63,7 +63,7 @@ public class ShogunQueueService : IShogunQueueService
         try
         {
             var bytes = File.ReadAllBytes(path);
-            var wrapper = YamlSerializer.Deserialize<ShogunQueueWrapper>(bytes);
+            var wrapper = YamlHelper.Deserialize<ShogunQueueWrapper>(bytes);
             return wrapper?.Queue ?? new List<ShogunCommand>();
         }
         catch
@@ -151,8 +151,8 @@ public class ShogunQueueService : IShogunQueueService
                 Timestamp = timestamp
             }
         };
-        var bytes = YamlSerializer.Serialize(task);
-        File.WriteAllBytes(path, bytes.ToArray());
+        var bytes = YamlHelper.SerializeToBytes(task);
+        File.WriteAllBytes(path, bytes);
     }
 
     /// <inheritdoc />
@@ -180,8 +180,8 @@ public class ShogunQueueService : IShogunQueueService
                 Reason = skillCandidateReason
             }
         };
-        var bytes = YamlSerializer.Serialize(report);
-        File.WriteAllBytes(path, bytes.ToArray());
+        var bytes = YamlHelper.SerializeToBytes(report);
+        File.WriteAllBytes(path, bytes);
     }
 
     /// <inheritdoc />
@@ -209,19 +209,18 @@ public class ShogunQueueService : IShogunQueueService
     private void WriteShogunToKaro(IReadOnlyList<ShogunCommand> list)
     {
         var wrapper = new ShogunQueueWrapper { Queue = list.ToList() };
-        var bytes = YamlSerializer.Serialize(wrapper);
+        var bytes = YamlHelper.SerializeToBytes(wrapper);
         var path = Path.Combine(GetRepoRoot(), "queue", "shogun_to_karo.yaml");
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
-        File.WriteAllBytes(path, bytes.ToArray());
+        File.WriteAllBytes(path, bytes);
     }
 
     /// <inheritdoc />
     public void WriteMasterStatus(DateTime updated, string? currentTask, string taskStatus, string? taskDescription, IReadOnlyList<TaskAssignmentItem>? assignments)
     {
-        // master_status.yaml は構造が複雑なため、一旦現状維持か、必要なら VYaml 用のモデルを作成する。
-        // ここでは VYaml を使用するようにモデルを定義して移行する。
+        // master_status.yaml は YamlDotNet で MasterStatusYaml をシリアライズする。
         var repo = GetRepoRoot();
         if (string.IsNullOrEmpty(repo))
             return;
@@ -259,8 +258,8 @@ public class ShogunQueueService : IShogunQueueService
             };
         }
 
-        var bytes = YamlSerializer.Serialize(status);
-        File.WriteAllBytes(path, bytes.ToArray());
+        var bytes = YamlHelper.SerializeToBytes(status);
+        File.WriteAllBytes(path, bytes);
     }
 
     /// <inheritdoc />

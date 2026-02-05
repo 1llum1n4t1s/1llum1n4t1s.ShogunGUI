@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Shogun.Avalonia.Models;
 using Shogun.Avalonia.Util;
-using VYaml.Serialization;
 
 namespace Shogun.Avalonia.Services;
 
@@ -82,7 +81,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         {
             var yaml = ExtractYamlFromResponse(response);
             var bytes = Encoding.UTF8.GetBytes(yaml);
-            var wrapper = YamlSerializer.Deserialize<TaskAssignmentYaml>(bytes);
+            var wrapper = YamlHelper.Deserialize<TaskAssignmentYaml>(bytes);
             return wrapper?.Assignments;
         }
         catch
@@ -97,7 +96,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         {
             var yaml = ExtractYamlFromResponse(response);
             var bytes = Encoding.UTF8.GetBytes(yaml);
-            return YamlSerializer.Deserialize<AshigaruReportJson>(bytes);
+            return YamlHelper.Deserialize<AshigaruReportJson>(bytes);
         }
         catch
         {

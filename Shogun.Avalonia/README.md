@@ -17,6 +17,7 @@ multi-agent-shogun 用の GUI アプリ（Avalonia）。フォーク元と同一
 - **memory/global_context.md**: queue/config の基準直下の `memory/global_context.md` が存在する場合、家老・足軽のプロンプトに「システム全体の設定・殿の好み」として先頭に付与する。フォーク元のコンテキスト読み込み手順に準拠。
 - **status/master_status.yaml**: 送信実行の開始・完了・失敗時に `status/master_status.yaml` を書き込む（フォーク元の shutsujin_departure.sh と同形式の全体進捗）。他ツールやスクリプトが参照する想定。
 - **ログレベル (logging.level)**: 設定画面の「ログレベル」は `config/settings.yaml` の `logging.level` に保存される。upstream の CLI・スクリプト（tmux セッション等）がこの YAML を参照する想定。**本アプリ（Shogun.Avalonia）の Logger はこの設定を読まず**、ビルド時に固定されたレベル（DEBUG ビルドでは Debug、それ以外では Info）でログ出力する。
+- **「ファイル書き込みの権限が必要」が出る場合**: 本アプリは Claude Code CLI 起動時にドキュメントルートを **`--add-dir`** で渡しているため、多くの場合は手動設定不要です。まだ出る場合は `docs/PERMISSION_AND_PATHS.md` を参照。
 
 ## フォーク運用上の注意
 

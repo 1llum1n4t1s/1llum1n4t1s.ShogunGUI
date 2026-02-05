@@ -94,6 +94,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _documentRoot = string.Empty;
 
+    /// <summary>Claude Code CLI のパーミッションをスキップするか（--dangerously-skip-permissions）。自己責任。</summary>
+    [ObservableProperty]
+    private bool _dangerouslySkipPermissions;
+
     /// <summary>ViewModel を生成する。</summary>
     /// <param name="settingsService">設定サービス。</param>
     /// <param name="claudeModelsService">models.dev でモデル一覧を取得するサービス。null のときは新規作成。</param>
@@ -124,6 +128,7 @@ public partial class SettingsViewModel : ObservableObject
         ThinkingAshigaru = s.ThinkingAshigaru;
         KaroExecutionPermissionMode = s.KaroExecutionPermissionMode;
         DocumentRoot = ExpandPath(s.DocumentRoot);
+        DangerouslySkipPermissions = s.DangerouslySkipPermissions;
     }
 
     /// <summary>保存済み ID（ModelShogun/Karo/Ashigaru）から SelectedModel* を同期する。AllModelOptions 設定後に呼ぶ。</summary>
@@ -213,7 +218,8 @@ public partial class SettingsViewModel : ObservableObject
             ApiEndpoint = current.ApiEndpoint,
             RepoRoot = current.RepoRoot,
             KaroExecutionPermissionMode = KaroExecutionPermissionMode,
-            DocumentRoot = DocumentRoot
+            DocumentRoot = DocumentRoot,
+            DangerouslySkipPermissions = DangerouslySkipPermissions
         });
         _onClose?.Invoke();
     }
@@ -328,7 +334,8 @@ public partial class SettingsViewModel : ObservableObject
             ApiEndpoint = current.ApiEndpoint,
             RepoRoot = current.RepoRoot,
             KaroExecutionPermissionMode = current.KaroExecutionPermissionMode,
-            DocumentRoot = current.DocumentRoot
+            DocumentRoot = current.DocumentRoot,
+            DangerouslySkipPermissions = current.DangerouslySkipPermissions
         });
     }
 

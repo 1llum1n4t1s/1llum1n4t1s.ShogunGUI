@@ -4,7 +4,6 @@ using System.IO;
 using System.Text;
 using Shogun.Avalonia.Models;
 using Shogun.Avalonia.Util;
-using VYaml.Serialization;
 
 namespace Shogun.Avalonia.Services;
 
@@ -36,13 +35,13 @@ public class ProjectService : IProjectService
         try
         {
             var bytes = File.ReadAllBytes(_filePath);
-            var wrapper = YamlSerializer.Deserialize<ProjectsWrapper>(bytes);
+            var wrapper = YamlHelper.Deserialize<ProjectsWrapper>(bytes);
             if (wrapper?.Projects != null && wrapper.Projects.Count > 0)
                 return wrapper.Projects;
         }
         catch (Exception ex)
         {
-            Logger.Log($"projects.yaml の VYaml パースに失敗しました: {ex.Message}", LogLevel.Warning);
+            Logger.Log($"projects.yaml の YAML パースに失敗しました: {ex.Message}", LogLevel.Warning);
         }
         return new List<Project>();
     }

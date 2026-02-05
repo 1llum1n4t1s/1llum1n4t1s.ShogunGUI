@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Shogun.Avalonia.Models;
 using Shogun.Avalonia.Util;
-using VYaml.Serialization;
 
 namespace Shogun.Avalonia.Services;
 
@@ -178,7 +177,7 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
         try
         {
             var bytes = Encoding.UTF8.GetBytes(taskContent);
-            var wrapper = YamlSerializer.Deserialize<TaskWrapper>(bytes);
+            var wrapper = YamlHelper.Deserialize<TaskWrapper>(bytes);
             return wrapper?.Task?.TargetPath?.Trim();
         }
         catch
@@ -187,8 +186,11 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
         }
     }
 
-    /// <summary>報告 result 文字列の最大長。VYaml の literal scalar 制限を超えないよう抑える。</summary>
-    private const int MaxReportResultLength = 8192;
+    /// <summary>報告 result 文字列の最大長。YAML の literal scalar 制限を超えないよう抑える。</summary>
+    private const int MaxReportResultLength = 4096;
+
+    /// <summary>1行あたりの最大文字数。YAML の literal 行制限を超えないよう抑える。</summary>
+    private const int MaxReportResultLineLength = 2000;
 
     /// <summary>YAML の literal scalar で問題になりうる制御文字を除去する。</summary>
     private static string SanitizeResultForYaml(string s)
@@ -209,6 +211,35 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
         return sb.ToString();
     }
 
+    /// <summary>報告文字列の各行を最大長で打ち切り、全体を MaxReportResultLength 以内に収める。</summary>
+    private static string TruncateReportResult(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+            return s;
+        var lines = s.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        var sb = new StringBuilder();
+        var total = 0;
+        foreach (var line in lines)
+        {
+            if (total >= MaxReportResultLength)
+                break;
+            var chunk = line.Length > MaxReportResultLineLength ? line.Substring(0, MaxReportResultLineLength) + "..." : line;
+            if (total + chunk.Length + 1 > MaxReportResultLength)
+            {
+                var remain = MaxReportResultLength - total - 8;
+                if (remain > 0)
+                    sb.Append(chunk.AsSpan(0, Math.Min(remain, chunk.Length)));
+                sb.Append("\n...(省略)");
+                break;
+            }
+            if (sb.Length > 0)
+                sb.Append('\n');
+            sb.Append(chunk);
+            total += chunk.Length + 1;
+        }
+        return sb.Length > 0 ? sb.ToString() : (s.Length > MaxReportResultLength ? s.Substring(0, MaxReportResultLength) + "\n...(省略)" : s);
+    }
+
     /// <summary>足軽ジョブ完了時に stdout とタスク内容から報告 YAML を queue/reports に書き込む。エージェントがファイルに書けなくてもアプリ側で必ず保存する。</summary>
     private void WriteReportFromAshigaruResult(int ashigaruIndex, string? taskContent, string? output)
     {
@@ -219,7 +250,7 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(taskContent);
-                var wrapper = YamlSerializer.Deserialize<TaskWrapper>(bytes);
+                var wrapper = YamlHelper.Deserialize<TaskWrapper>(bytes);
                 if (!string.IsNullOrWhiteSpace(wrapper?.Task?.TaskId))
                     taskId = wrapper.Task.TaskId;
                 if (!string.IsNullOrWhiteSpace(wrapper?.Task?.Timestamp))
@@ -229,8 +260,7 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
         }
         var result = (output ?? "").Trim();
         result = SanitizeResultForYaml(result);
-        if (result.Length > MaxReportResultLength)
-            result = result.Substring(0, MaxReportResultLength) + "\n...(省略)";
+        result = TruncateReportResult(result);
         try
         {
             _queueService.WriteReportYaml(ashigaruIndex, taskId, timestamp, "done", result);
@@ -238,15 +268,15 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
         catch (ArgumentOutOfRangeException ex)
         {
             Logger.Log($"足軽{ashigaruIndex}報告のYAML出力で長さ制限超過の可能性: {ex.Message}. 要約のみ保存します。", LogLevel.Warning);
-            var fallback = $"任務完了。出力が長すぎるため要約のみ記載。元の長さ: {(output ?? "").Length} 文字。";
+            const string fallback = "任務完了。出力が長いため要約のみ保存しました。";
             _queueService.WriteReportYaml(ashigaruIndex, taskId, timestamp, "done", fallback);
         }
         catch (Exception ex)
         {
             Logger.Log($"足軽{ashigaruIndex}報告の保存に失敗: {ex.GetType().Name} {ex.Message}", LogLevel.Error);
-            var fallback = $"報告保存時にエラーが発生しました: {ex.Message}";
-            if (fallback.Length > 500)
-                fallback = fallback.Substring(0, 500) + "...";
+            var fallback = SanitizeResultForYaml($"報告保存時にエラー: {ex.Message}");
+            if (fallback.Length > 200)
+                fallback = fallback.Substring(0, 200) + "...";
             _queueService.WriteReportYaml(ashigaruIndex, taskId, timestamp, "error", fallback);
         }
     }
@@ -422,7 +452,7 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
             }
             
             // コードブロックが見つからない場合は、全体が YAML であると期待してパースを試みるが、
-            // その前に YAML らしい開始部分を探す（VYaml の MappingStart エラー対策）
+            // その前に YAML らしい開始部分を探す（YAML パースエラー対策）
             if (string.IsNullOrWhiteSpace(yamlText))
             {
                 var lines = karoYaml.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
@@ -462,7 +492,7 @@ queue/tasks/ashigaru{ashigaruIndex}.yaml は、カレントディレクトリか
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(yamlText);
-                var wrapper = YamlSerializer.Deserialize<TaskAssignmentYaml>(bytes);
+                var wrapper = YamlHelper.Deserialize<TaskAssignmentYaml>(bytes);
                 if (wrapper?.Assignments == null || wrapper.Assignments.Count == 0)
                 {
                     Logger.Log("家老の YAML 出力にタスク割り当てが含まれていません。", LogLevel.Debug);
