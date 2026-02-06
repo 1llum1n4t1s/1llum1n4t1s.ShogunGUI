@@ -39,18 +39,13 @@ public class ClaudeCodeProcessHost : IClaudeCodeProcessHost
         {
             if (_started)
                 return;
-            var nodeDir = _setupService.GetAppLocalNodeDir();
-            if (string.IsNullOrEmpty(nodeDir))
+            var nodeExe = _setupService.GetNodeExePath();
+            if (string.IsNullOrEmpty(nodeExe) || !File.Exists(nodeExe))
             {
-                Logger.Log("ClaudeCodeProcessHost: Node.js がインストールされていません。", LogLevel.Error);
+                Logger.Log($"ClaudeCodeProcessHost: Node.js 実行ファイルが見つかりません: {nodeExe}", LogLevel.Error);
                 return;
             }
-            var nodeExe = Path.Combine(nodeDir, "node.exe");
-            if (!File.Exists(nodeExe))
-            {
-                Logger.Log($"ClaudeCodeProcessHost: node.exe が見つかりません: {nodeExe}", LogLevel.Error);
-                return;
-            }
+            var nodeDir = Path.GetDirectoryName(nodeExe)!;
             var cliJs = Path.Combine(_setupService.GetAppLocalNpmPrefix(), "node_modules", "@anthropic-ai", "claude-code", "cli.js");
             if (!File.Exists(cliJs))
             {
