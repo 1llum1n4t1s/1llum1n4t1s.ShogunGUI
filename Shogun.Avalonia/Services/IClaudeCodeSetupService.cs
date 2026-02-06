@@ -15,6 +15,9 @@ public interface IClaudeCodeSetupService
     /// <summary>npm のグローバル prefix（Claude Code のインストール先）。</summary>
     string GetAppLocalNpmPrefix();
 
+    /// <summary>Node.js 実行ファイルのフルパス（未インストール時は空）。</summary>
+    string GetNodeExePath();
+
     /// <summary>アプリ内に Node.js がインストール済みか。</summary>
     bool IsNodeInstalled();
 
